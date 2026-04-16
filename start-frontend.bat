@@ -103,7 +103,7 @@ echo Browser will open automatically
 echo.
 echo Press Ctrl+C to stop the server
 echo.
-echo NOTE: Make sure backend is running on port 8080
+echo NOTE: Make sure backend is running on port 9090
 echo.
 
 call "%NODE_PATH%\npm.cmd" start

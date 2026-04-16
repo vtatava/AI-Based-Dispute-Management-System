@@ -911,7 +911,7 @@ echo ========================================
 echo.
 echo ML Service:      http://localhost:5000
 echo Intent Service:  http://localhost:5001
-echo Backend:         http://localhost:8080
+echo Backend:         http://localhost:9090
 echo Frontend:        http://localhost:3000
 echo.
 pause
@@ -995,7 +995,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8080:8080"
+      - "9090:9090"
     depends_on:
       - ml-service
       - intent-service

@@ -4,7 +4,10 @@ import com.app.dto.DisputeRequest;
 import com.app.dto.DisputeResponse;
 import com.app.service.AIAnalysisService;
 import com.app.service.AIAnalysisService.AIAnalysisResult;
+import com.app.service.OllamaService;
+import com.app.service.OllamaService.OllamaAnalysisResult;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -15,6 +18,12 @@ public class DisputeController {
     @Autowired
     private AIAnalysisService aiAnalysisService;
 
+    @Autowired
+    private OllamaService ollamaService;
+
+    @Value("${ollama.enabled:true}")
+    private boolean ollamaEnabled;
+
     @PostMapping("/raise")
     public DisputeResponse raiseDispute(@RequestBody DisputeRequest request) {
         // Initialize variables
@@ -22,7 +31,7 @@ public class DisputeController {
         String intent = "NORMAL";
         Double refundAmount = null;
         String reviewReason = null;
-        String decision;
+        String decision = "PENDING";
         
         String description = request.getDescription() != null ? request.getDescription().toLowerCase() : "";
         
@@ -115,6 +124,36 @@ public class DisputeController {
         // Cap risk score at 100
         riskScore = Math.min(riskScore, 100);
         
+        // OLLAMA LLM ANALYSIS: Get AI-powered decision and reasoning
+        OllamaAnalysisResult ollamaAnalysis = null;
+        if (ollamaEnabled) {
+            try {
+                ollamaAnalysis = ollamaService.analyzeDispute(
+                    description,
+                    request.getAmount(),
+                    request.getTransactionLocation(),
+                    request.getUserCurrentLocation(),
+                    riskScore,
+                    decision != null ? decision : "PENDING"
+                );
+                
+                // Use LLM recommendation if available and confident
+                if (ollamaAnalysis != null && "HIGH".equals(ollamaAnalysis.getConfidenceLevel())) {
+                    // Override decision with LLM recommendation for high confidence cases
+                    if ("AUTO_REFUND".equals(ollamaAnalysis.getRecommendedDecision()) && riskScore >= 60) {
+                        decision = "AUTO_REFUND & BLOCK_CARD";
+                        refundAmount = request.getAmount();
+                    } else if ("HUMAN_REVIEW".equals(ollamaAnalysis.getRecommendedDecision())) {
+                        decision = "HUMAN_REVIEW";
+                        refundAmount = null;
+                    }
+                }
+            } catch (Exception e) {
+                // Log error but continue with rule-based analysis
+                System.err.println("Ollama analysis failed: " + e.getMessage());
+            }
+        }
+        
         // AI Decision Logic based on comprehensive analysis
         if (hasInsufficientClarity) {
             // Insufficient clarity - Route to human review
@@ -148,6 +187,19 @@ public class DisputeController {
             reason.append("\nClear fraud indicators detected. Full refund approved automatically. ")
                   .append("Card will be BLOCKED immediately for security.");
             
+            // Add Ollama LLM insights if available
+            if (ollamaAnalysis != null) {
+                reason.append("\n\n🤖 LLM Analysis (").append(ollamaAnalysis.getModel()).append("):\n");
+                reason.append("• Fraud Assessment: ").append(ollamaAnalysis.getFraudAssessment()).append("\n");
+                reason.append("• Confidence: ").append(ollamaAnalysis.getConfidenceLevel()).append("\n");
+                if (ollamaAnalysis.getKeyReasons() != null && !ollamaAnalysis.getKeyReasons().equals("Not available")) {
+                    reason.append("• Key Reasons: ").append(ollamaAnalysis.getKeyReasons()).append("\n");
+                }
+                if (ollamaAnalysis.getRedFlags() != null && !ollamaAnalysis.getRedFlags().equals("Not available")) {
+                    reason.append("• Red Flags: ").append(ollamaAnalysis.getRedFlags()).append("\n");
+                }
+            }
+            
             reviewReason = reason.toString();
             
         } else if (riskScore >= 40 && riskScore < 80) {
@@ -177,6 +229,15 @@ public class DisputeController {
                   .append(buildReviewContext(hasFraudIndicators, hasUnauthorizedKeywords, locationMismatch, isInternational))
                   .append("Please contact our Dispute Team - Contact: disputeteam247@xyz.com");
             
+            // Add Ollama LLM insights if available
+            if (ollamaAnalysis != null) {
+                reason.append("\n\n🤖 LLM Analysis (").append(ollamaAnalysis.getModel()).append("):\n");
+                reason.append(ollamaAnalysis.getSummary()).append("\n");
+                if (ollamaAnalysis.getRecommendations() != null && !ollamaAnalysis.getRecommendations().equals("Not available")) {
+                    reason.append("• Recommendations: ").append(ollamaAnalysis.getRecommendations()).append("\n");
+                }
+            }
+            
             reviewReason = reason.toString();
             
         } else {
@@ -194,6 +255,12 @@ public class DisputeController {
             reason.append("While risk appears low, it is recommended to have human verification for fairness. ")
                   .append("This case needs to be routed to Human Review for final decision. ")
                   .append("Please contact our Dispute Team immediately - Contact: disputeteam247@xyz.com");
+            
+            // Add Ollama LLM insights if available
+            if (ollamaAnalysis != null) {
+                reason.append("\n\n🤖 LLM Analysis (").append(ollamaAnalysis.getModel()).append("):\n");
+                reason.append(ollamaAnalysis.getSummary());
+            }
             
             reviewReason = reason.toString();
         }

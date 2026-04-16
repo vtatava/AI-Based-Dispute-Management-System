@@ -28,7 +28,7 @@ function App() {
     setResult(null);
 
     try {
-      const response = await axios.post('http://localhost:8080/api/dispute/raise', {
+      const response = await axios.post('http://localhost:9090/api/dispute/raise', {
         amount: parseFloat(formData.amount),
         transactionLocation: formData.transactionLocation,
         userCurrentLocation: formData.userCurrentLocation,

@@ -5,7 +5,7 @@
 ### Option 1: Start Everything at Once
 1. Double-click `start-all.bat`
 2. Wait for two command windows to open:
-   - **Backend Server** (Spring Boot) - Port 8080
+   - **Backend Server** (Spring Boot) - Port 9090
    - **Frontend Server** (React) - Port 3000
 3. Browser will automatically open to http://localhost:3000
 4. **Keep both windows open** while using the application
@@ -52,7 +52,7 @@ The batch files will check these automatically and show clear error messages if 
 - Checks Java installation
 - Navigates to backend directory
 - Builds the project using Maven wrapper
-- Starts Spring Boot server on port 8080
+- Starts Spring Boot server on port 9090
 - **Window must stay open**
 
 ### start-frontend.bat
@@ -76,9 +76,9 @@ The batch files will check these automatically and show clear error messages if 
 
 ### "Port already in use" Error
 
-**Backend (Port 8080):**
+**Backend (Port 9090):**
 ```cmd
-netstat -ano | findstr :8080
+netstat -ano | findstr :9090
 taskkill /PID <PID_NUMBER> /F
 ```
 
@@ -109,7 +109,7 @@ If npm install fails:
 ### Backend Running Successfully:
 ```
 Started DisputeAiApplication in X.XXX seconds
-Tomcat started on port(s): 8080
+Tomcat started on port(s): 9090
 ```
 
 ### Frontend Running Successfully:

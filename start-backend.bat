@@ -76,7 +76,7 @@ echo ========================================
 echo  Starting Spring Boot Application
 echo ========================================
 echo.
-echo Backend will be available at: http://localhost:8080
+echo Backend will be available at: http://localhost:9090
 echo.
 echo Press Ctrl+C to stop the server
 echo.
