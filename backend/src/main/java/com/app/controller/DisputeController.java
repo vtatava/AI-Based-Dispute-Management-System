@@ -6,6 +6,8 @@ import com.app.service.AIAnalysisService;
 import com.app.service.AIAnalysisService.AIAnalysisResult;
 import com.app.service.OllamaService;
 import com.app.service.OllamaService.OllamaAnalysisResult;
+import com.app.service.IbmIcaService;
+import com.app.service.IbmIcaService.IcaAnalysisResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -21,8 +23,17 @@ public class DisputeController {
     @Autowired
     private OllamaService ollamaService;
 
+    @Autowired
+    private IbmIcaService ibmIcaService;
+
     @Value("${ollama.enabled:true}")
     private boolean ollamaEnabled;
+
+    @Value("${ibm.ica.enabled:false}")
+    private boolean ibmIcaEnabled;
+
+    @Value("${llm.provider:ollama}")
+    private String llmProvider;
 
     @PostMapping("/raise")
     public DisputeResponse raiseDispute(@RequestBody DisputeRequest request) {
@@ -124,9 +135,40 @@ public class DisputeController {
         // Cap risk score at 100
         riskScore = Math.min(riskScore, 100);
         
-        // OLLAMA LLM ANALYSIS: Get AI-powered decision and reasoning
+        // LLM ANALYSIS: Get AI-powered decision and reasoning
         OllamaAnalysisResult ollamaAnalysis = null;
-        if (ollamaEnabled) {
+        IcaAnalysisResult icaAnalysis = null;
+        
+        // Choose LLM provider based on configuration
+        if (("ibm-ica".equalsIgnoreCase(llmProvider) || "openai-compat".equalsIgnoreCase(llmProvider)) && ibmIcaEnabled) {
+            // Use IBM ICA / OpenAI-Compatible API (faster cloud-based API)
+            try {
+                icaAnalysis = ibmIcaService.analyzeDispute(
+                    description,
+                    request.getAmount(),
+                    request.getTransactionLocation(),
+                    request.getUserCurrentLocation(),
+                    riskScore,
+                    decision != null ? decision : "PENDING"
+                );
+                
+                // Use LLM recommendation if available and confident
+                if (icaAnalysis != null && "HIGH".equals(icaAnalysis.getConfidenceLevel())) {
+                    // Override decision with LLM recommendation for high confidence cases
+                    if ("AUTO_REFUND".equals(icaAnalysis.getRecommendedDecision()) && riskScore >= 60) {
+                        decision = "AUTO_REFUND & BLOCK_CARD";
+                        refundAmount = request.getAmount();
+                    } else if ("HUMAN_REVIEW".equals(icaAnalysis.getRecommendedDecision())) {
+                        decision = "HUMAN_REVIEW";
+                        refundAmount = null;
+                    }
+                }
+            } catch (Exception e) {
+                // Log error but continue with rule-based analysis
+                System.err.println("IBM ICA analysis failed: " + e.getMessage());
+            }
+        } else if (ollamaEnabled) {
+            // Use Ollama (local LLM)
             try {
                 ollamaAnalysis = ollamaService.analyzeDispute(
                     description,
@@ -187,8 +229,18 @@ public class DisputeController {
             reason.append("\nClear fraud indicators detected. Full refund approved automatically. ")
                   .append("Card will be BLOCKED immediately for security.");
             
-            // Add Ollama LLM insights if available
-            if (ollamaAnalysis != null) {
+            // Add LLM insights if available (IBM ICA or Ollama)
+            if (icaAnalysis != null) {
+                reason.append("\n\n🤖 IBM ICA Analysis (").append(icaAnalysis.getModel()).append("):\n");
+                reason.append("• Fraud Assessment: ").append(icaAnalysis.getFraudAssessment()).append("\n");
+                reason.append("• Confidence: ").append(icaAnalysis.getConfidenceLevel()).append("\n");
+                if (icaAnalysis.getKeyReasons() != null && !icaAnalysis.getKeyReasons().equals("Not available")) {
+                    reason.append("• Key Reasons: ").append(icaAnalysis.getKeyReasons()).append("\n");
+                }
+                if (icaAnalysis.getRedFlags() != null && !icaAnalysis.getRedFlags().equals("Not available")) {
+                    reason.append("• Red Flags: ").append(icaAnalysis.getRedFlags()).append("\n");
+                }
+            } else if (ollamaAnalysis != null) {
                 reason.append("\n\n🤖 LLM Analysis (").append(ollamaAnalysis.getModel()).append("):\n");
                 reason.append("• Fraud Assessment: ").append(ollamaAnalysis.getFraudAssessment()).append("\n");
                 reason.append("• Confidence: ").append(ollamaAnalysis.getConfidenceLevel()).append("\n");
@@ -229,8 +281,14 @@ public class DisputeController {
                   .append(buildReviewContext(hasFraudIndicators, hasUnauthorizedKeywords, locationMismatch, isInternational))
                   .append("Please contact our Dispute Team - Contact: disputeteam247@xyz.com");
             
-            // Add Ollama LLM insights if available
-            if (ollamaAnalysis != null) {
+            // Add LLM insights if available (IBM ICA or Ollama)
+            if (icaAnalysis != null) {
+                reason.append("\n\n🤖 IBM ICA Analysis (").append(icaAnalysis.getModel()).append("):\n");
+                reason.append(icaAnalysis.getSummary()).append("\n");
+                if (icaAnalysis.getRecommendations() != null && !icaAnalysis.getRecommendations().equals("Not available")) {
+                    reason.append("• Recommendations: ").append(icaAnalysis.getRecommendations()).append("\n");
+                }
+            } else if (ollamaAnalysis != null) {
                 reason.append("\n\n🤖 LLM Analysis (").append(ollamaAnalysis.getModel()).append("):\n");
                 reason.append(ollamaAnalysis.getSummary()).append("\n");
                 if (ollamaAnalysis.getRecommendations() != null && !ollamaAnalysis.getRecommendations().equals("Not available")) {
@@ -256,8 +314,11 @@ public class DisputeController {
                   .append("This case needs to be routed to Human Review for final decision. ")
                   .append("Please contact our Dispute Team immediately - Contact: disputeteam247@xyz.com");
             
-            // Add Ollama LLM insights if available
-            if (ollamaAnalysis != null) {
+            // Add LLM insights if available (IBM ICA or Ollama)
+            if (icaAnalysis != null) {
+                reason.append("\n\n🤖 IBM ICA Analysis (").append(icaAnalysis.getModel()).append("):\n");
+                reason.append(icaAnalysis.getSummary());
+            } else if (ollamaAnalysis != null) {
                 reason.append("\n\n🤖 LLM Analysis (").append(ollamaAnalysis.getModel()).append("):\n");
                 reason.append(ollamaAnalysis.getSummary());
             }
