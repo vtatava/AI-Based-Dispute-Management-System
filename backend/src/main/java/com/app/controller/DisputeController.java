@@ -2,15 +2,31 @@ package com.app.controller;
 
 import com.app.dto.DisputeRequest;
 import com.app.dto.DisputeResponse;
+import com.app.dto.DisputeResponse.AgentFlow;
+import com.app.agent.IntentAgent;
+import com.app.agent.IntentAgent.IntentAnalysisResult;
+import com.app.agent.ContextAgent;
+import com.app.agent.ContextAgent.ContextData;
+import com.app.agent.DecisionAgent;
+import com.app.agent.DecisionAgent.DecisionResult;
+import com.app.entity.DisputeRecord;
+import com.app.repository.DisputeRecordRepository;
 import com.app.service.AIAnalysisService;
 import com.app.service.AIAnalysisService.AIAnalysisResult;
 import com.app.service.OllamaService;
 import com.app.service.OllamaService.OllamaAnalysisResult;
 import com.app.service.IbmIcaService;
 import com.app.service.IbmIcaService.IcaAnalysisResult;
+import com.app.service.IdValidationService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.http.ResponseEntity;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/dispute")
@@ -25,6 +41,21 @@ public class DisputeController {
 
     @Autowired
     private IbmIcaService ibmIcaService;
+    
+    @Autowired
+    private IntentAgent intentAgent;
+    
+    @Autowired
+    private ContextAgent contextAgent;
+    
+    @Autowired
+    private DecisionAgent decisionAgent;
+    
+    @Autowired
+    private DisputeRecordRepository disputeRecordRepository;
+    
+    @Autowired
+    private IdValidationService idValidationService;
 
     @Value("${ollama.enabled:true}")
     private boolean ollamaEnabled;
@@ -34,6 +65,9 @@ public class DisputeController {
 
     @Value("${llm.provider:ollama}")
     private String llmProvider;
+    
+    @Value("${agentic.mode:true}")
+    private boolean agenticMode;
 
     @PostMapping("/raise")
     public DisputeResponse raiseDispute(@RequestBody DisputeRequest request) {
@@ -326,7 +360,161 @@ public class DisputeController {
             reviewReason = reason.toString();
         }
         
+        // Save dispute record to database for historical tracking and analytics
+        try {
+            DisputeRecord record = new DisputeRecord();
+            record.setUserId(request.getUserId());
+            record.setTransactionType(request.getTransactionType());
+            
+            // Parse transaction date/time if provided
+            if (request.getTransactionDateTime() != null && !request.getTransactionDateTime().isEmpty()) {
+                try {
+                    record.setTransactionDate(LocalDateTime.parse(request.getTransactionDateTime(),
+                        DateTimeFormatter.ISO_DATE_TIME));
+                } catch (Exception e) {
+                    // If parsing fails, use current time
+                    record.setTransactionDate(LocalDateTime.now());
+                }
+            } else {
+                record.setTransactionDate(LocalDateTime.now());
+            }
+            
+            record.setAmount(request.getAmount());
+            record.setDescription(request.getDescription());
+            record.setIntent(intent);
+            record.setRiskScore(riskScore);
+            record.setDecision(decision);
+            record.setTransactionLocation(request.getTransactionLocation());
+            record.setUserCurrentLocation(request.getUserCurrentLocation());
+            record.setRefundAmount(refundAmount);
+            record.setReviewReason(reviewReason);
+            record.setWebsiteUrl(request.getWebsiteUrl());
+            
+            disputeRecordRepository.save(record);
+        } catch (Exception e) {
+            // Log error but don't fail the request
+            System.err.println("Failed to save dispute record: " + e.getMessage());
+        }
+        
         return new DisputeResponse(intent, riskScore, decision, refundAmount, reviewReason);
+    }
+    
+    /**
+     * AGENTIC WORKFLOW: Orchestrates IntentAgent -> ContextAgent -> DecisionAgent
+     * This method demonstrates the multi-agent collaboration approach
+     */
+    @PostMapping("/raise-agentic")
+    public DisputeResponse raiseDisputeAgentic(@RequestBody DisputeRequest request) {
+        DisputeResponse response = new DisputeResponse();
+        AgentFlow agentFlow = new AgentFlow();
+        
+        try {
+            // STEP 1: Intent Agent - Analyze dispute intent
+            agentFlow.setIntentAgent("🤖 Intent Agent: Analyzing dispute classification...");
+            IntentAnalysisResult intentResult = intentAgent.analyzeIntent(
+                request.getDescription(),
+                request.getTransactionType() != null ? request.getTransactionType() : "UNKNOWN",
+                request.getTransactionLocation(),
+                request.getUserCurrentLocation()
+            );
+            agentFlow.setIntentResult(String.format(
+                "✓ Intent: %s | Confidence: %s | Reason: %s",
+                intentResult.getIntent(),
+                intentResult.getConfidence(),
+                intentResult.getReason()
+            ));
+            
+            // STEP 2: Context Agent - Gather contextual data
+            agentFlow.setContextAgent("🔍 Context Agent: Gathering transaction context...");
+            ContextData contextData = contextAgent.gatherContext(
+                request.getUserId() != null ? request.getUserId() : "UNKNOWN",
+                request.getTransactionType() != null ? request.getTransactionType() : "UNKNOWN",
+                request.getTransactionLocation(),
+                request.getUserCurrentLocation(),
+                request.getWebsiteUrl() != null ? request.getWebsiteUrl() : "",
+                request.getAmount()
+            );
+            agentFlow.setContextResult(String.format(
+                "✓ Risk Score: %d | Location Match: %s | User Verified: %s\n%s",
+                contextData.getContextRiskScore(),
+                !contextData.isLocationMismatch() ? "Yes" : "No (ALERT)",
+                contextData.isUserVerified() ? "Yes" : "No",
+                contextData.getContextNotes()
+            ));
+            
+            // STEP 3: Decision Agent - Make final decision
+            agentFlow.setDecisionAgent("⚖️ Decision Agent: Making final decision...");
+            DecisionResult decisionResult = decisionAgent.makeDecision(
+                intentResult,
+                contextData,
+                request.getDescription(),
+                request.getAmount()
+            );
+            agentFlow.setDecisionResult(String.format(
+                "✓ Decision: %s | Action: %s\n%s",
+                decisionResult.getDecision(),
+                decisionResult.getAction(),
+                decisionResult.getExplanation()
+            ));
+            
+            // Build final response
+            response.setIntent(intentResult.getIntent());
+            response.setRiskScore(decisionResult.getRiskScore());
+            response.setDecision(decisionResult.getDecision());
+            response.setRefundAmount(decisionResult.getRefundAmount());
+            response.setReviewReason(decisionResult.getExplanation());
+            response.setAgentFlow(agentFlow);
+            response.setUserVerified(contextData.isUserVerified());
+            
+            // Add verification message
+            if (!contextData.isUserVerified()) {
+                response.setVerificationMessage("⚠️ User not found in database - additional verification required");
+            }
+            
+            // Save dispute record to database for historical tracking and analytics
+            try {
+                DisputeRecord record = new DisputeRecord();
+                record.setUserId(request.getUserId());
+                record.setTransactionType(request.getTransactionType());
+                
+                // Parse transaction date/time if provided
+                if (request.getTransactionDateTime() != null && !request.getTransactionDateTime().isEmpty()) {
+                    try {
+                        record.setTransactionDate(LocalDateTime.parse(request.getTransactionDateTime(),
+                            DateTimeFormatter.ISO_DATE_TIME));
+                    } catch (Exception e) {
+                        // If parsing fails, use current time
+                        record.setTransactionDate(LocalDateTime.now());
+                    }
+                } else {
+                    record.setTransactionDate(LocalDateTime.now());
+                }
+                
+                record.setAmount(request.getAmount());
+                record.setDescription(request.getDescription());
+                record.setIntent(response.getIntent());
+                record.setRiskScore(response.getRiskScore());
+                record.setDecision(response.getDecision());
+                record.setTransactionLocation(request.getTransactionLocation());
+                record.setUserCurrentLocation(request.getUserCurrentLocation());
+                record.setRefundAmount(response.getRefundAmount());
+                record.setReviewReason(response.getReviewReason());
+                record.setWebsiteUrl(request.getWebsiteUrl());
+                
+                disputeRecordRepository.save(record);
+            } catch (Exception saveException) {
+                // Log error but don't fail the request
+                System.err.println("Failed to save dispute record (agentic): " + saveException.getMessage());
+            }
+            
+        } catch (Exception e) {
+            // Fallback to rule-based if agentic workflow fails
+            agentFlow.setDecisionResult("⚠️ Agentic workflow error - falling back to rule-based analysis");
+            response = raiseDispute(request);
+            response.setAgentFlow(agentFlow);
+        }
+        
+        return response;
     }
     
     /**
@@ -470,6 +658,150 @@ public class DisputeController {
         }
         
         return context.toString();
+    }
+    
+    /**
+     * Validate user ID document
+     */
+    @PostMapping("/validate-id")
+    public ResponseEntity<Map<String, Object>> validateId(
+            @RequestParam("idDocument") MultipartFile idDocument,
+            @RequestParam(value = "userId", required = false) String userId) {
+        
+        Map<String, Object> result = idValidationService.validateIdDocument(idDocument, userId);
+        return ResponseEntity.ok(result);
+    }
+    
+    /**
+     * Enhanced dispute submission with file uploads and merchant name handling
+     */
+    @PostMapping(value = "/raise-with-files", consumes = "multipart/form-data")
+    public DisputeResponse raiseDisputeWithFiles(
+            @RequestParam("amount") double amount,
+            @RequestParam("transactionLocation") String transactionLocation,
+            @RequestParam("userCurrentLocation") String userCurrentLocation,
+            @RequestParam("description") String description,
+            @RequestParam(value = "userId", required = false) String userId,
+            @RequestParam("transactionType") String transactionType,
+            @RequestParam(value = "websiteUrl", required = false) String websiteUrl,
+            @RequestParam(value = "merchantName", required = false) String merchantName,
+            @RequestParam(value = "transactionDateTime", required = false) String transactionDateTime,
+            @RequestParam(value = "transactionDocuments", required = false) MultipartFile[] transactionDocuments,
+            @RequestParam(value = "userIdDocument", required = false) MultipartFile userIdDocument,
+            @RequestParam(value = "useAgenticMode", required = false, defaultValue = "true") boolean useAgenticMode) {
+        
+        // Create DisputeRequest from form data
+        DisputeRequest request = new DisputeRequest();
+        request.setAmount(amount);
+        request.setTransactionLocation(transactionLocation);
+        request.setUserCurrentLocation(userCurrentLocation);
+        request.setDescription(description);
+        request.setUserId(userId);
+        request.setTransactionType(transactionType);
+        request.setWebsiteUrl(websiteUrl);
+        request.setMerchantName(merchantName);
+        request.setTransactionDateTime(transactionDateTime);
+        
+        // CRITICAL: Validate user ID if document provided
+        // The system will check if the provided UserID matches the UserID associated with the extracted Aadhaar
+        if (userIdDocument != null && !userIdDocument.isEmpty()) {
+            Map<String, Object> idValidation = idValidationService.validateIdDocument(userIdDocument, userId);
+            boolean isValid = (boolean) idValidation.get("valid");
+            
+            if (!isValid) {
+                // Return error response if ID validation fails
+                DisputeResponse response = new DisputeResponse();
+                response.setIntent("ID_VALIDATION_FAILED");
+                response.setRiskScore(100);
+                response.setDecision("REJECTED");
+                response.setRefundAmount(null);
+                
+                String errorMessage = idValidation.get("message").toString();
+                
+                // Add additional context if UserID mismatch detected
+                if (idValidation.containsKey("expectedUserId")) {
+                    errorMessage += "\n\n🚫 DISPUTE REJECTED: UserID validation failed. " +
+                                   "The provided UserID does not match the UserID associated with the uploaded ID document. " +
+                                   "Please verify your UserID and try again with the correct credentials.";
+                } else {
+                    errorMessage += "\n\n🚫 DISPUTE REJECTED: ID validation failed. " +
+                                   "Please upload a valid government ID document and provide the correct UserID.";
+                }
+                
+                response.setReviewReason(errorMessage);
+                return response;
+            }
+            
+            // ID validation successful - extract verified user information
+            String verifiedUserName = idValidation.get("userName") != null ?
+                                     idValidation.get("userName").toString() : "Unknown";
+            String verifiedUserId = idValidation.get("userIdCode") != null ?
+                                   idValidation.get("userIdCode").toString() : userId;
+            
+            System.out.println("✓ ID Validation Successful: UserID=" + verifiedUserId +
+                             ", Name=" + verifiedUserName + ", Aadhaar=" + idValidation.get("userId"));
+        } else {
+            // If no ID document provided, still require UserID
+            if (userId == null || userId.isEmpty() || userId.equals("GUEST_USER")) {
+                DisputeResponse response = new DisputeResponse();
+                response.setIntent("ID_VALIDATION_REQUIRED");
+                response.setRiskScore(100);
+                response.setDecision("REJECTED");
+                response.setRefundAmount(null);
+                response.setReviewReason("🚫 DISPUTE REJECTED: UserID and ID document are required. " +
+                                       "Please provide your UserID (e.g., ABC001) and upload a valid government ID document.");
+                return response;
+            }
+        }
+        
+        // Handle merchant-specific logic
+        if ("MERCHANT".equalsIgnoreCase(transactionType) && merchantName != null && !merchantName.isEmpty()) {
+            // AI should analyze merchant name and decide auto-refund or human review
+            String merchantAnalysis = analyzeMerchantTransaction(merchantName, description, amount);
+            
+            // Add merchant analysis to description for AI processing
+            request.setDescription(description + " [Merchant: " + merchantName + ". " + merchantAnalysis + "]");
+        }
+        
+        // Process the dispute using agentic or regular mode based on parameter
+        if (useAgenticMode) {
+            return raiseDisputeAgentic(request);
+        } else {
+            return raiseDispute(request);
+        }
+    }
+    
+    /**
+     * Analyze merchant transaction to determine if auto-refund or human review is needed
+     */
+    private String analyzeMerchantTransaction(String merchantName, String description, double amount) {
+        // Check if merchant is known/trusted
+        // In production, this would check against a database of merchants
+        
+        String analysis = "";
+        String lowerMerchant = merchantName.toLowerCase();
+        String lowerDesc = description.toLowerCase();
+        
+        // Check for known fraud indicators with merchants
+        if (lowerDesc.contains("unauthorized") || lowerDesc.contains("not done by me") ||
+            lowerDesc.contains("fraud") || lowerDesc.contains("scam")) {
+            analysis += "Unauthorized merchant transaction reported. ";
+            
+            // High-value unauthorized merchant transactions should get auto-refund
+            if (amount > 5000) {
+                analysis += "High-value unauthorized transaction - recommend AUTO_REFUND. ";
+            } else {
+                analysis += "Medium-value unauthorized transaction - recommend HUMAN_REVIEW. ";
+            }
+        } else if (lowerDesc.contains("duplicate") || lowerDesc.contains("charged twice")) {
+            analysis += "Duplicate charge reported at merchant. Recommend HUMAN_REVIEW to verify. ";
+        } else if (lowerDesc.contains("wrong amount") || lowerDesc.contains("overcharged")) {
+            analysis += "Amount dispute at merchant. Recommend HUMAN_REVIEW to verify correct amount. ";
+        } else {
+            analysis += "General merchant dispute. Recommend HUMAN_REVIEW for investigation. ";
+        }
+        
+        return analysis;
     }
 }
 

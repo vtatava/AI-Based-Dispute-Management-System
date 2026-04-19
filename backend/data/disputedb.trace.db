@@ -1,0 +1,46 @@
+2026-04-18 16:32:54 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "USER_DATA" not found (this database is empty); SQL statement:
+select u1_0.id,u1_0.created_at,u1_0.dob,u1_0.govt_id,u1_0.travel_history,u1_0.user_id,u1_0.user_name from user_data u1_0 [42104-214]
+2026-04-18 16:36:58 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 16:39:42 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 16:44:07 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 16:58:26 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 16:58:27 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:00:17 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:00:17 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:13:26 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:16:05 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:17:24 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:18:56 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:20:49 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:25:34 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
+2026-04-18 17:28:38 jdbc[13]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT * FROM USER_DATA \000d\000a\000d\000aUPDATE [*]USER_DATA SET current_location = 'USA' WHERE user_id = 'ABC003'"; SQL statement:
+SELECT * FROM USER_DATA 
+
+UPDATE USER_DATA SET current_location = 'USA' WHERE user_id = 'ABC003' [42000-214]
+2026-04-18 17:29:06 jdbc[13]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT * FROM USER_DATA \000d\000a\000d\000aUPDATE [*]USER_DATA SET current_location = 'USA' WHERE user_id = 'ABC003'"; SQL statement:
+SELECT * FROM USER_DATA 
+
+UPDATE USER_DATA SET current_location = 'USA' WHERE user_id = 'ABC003' [42000-214]
+2026-04-18 17:29:28 jdbc[13]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Syntax error in SQL statement "SELECT * FROM USER_DATA \000d\000a\000d\000aUPDATE [*]USER_DATA SET current_location = 'USA' WHERE user_id = 'ABC003'"; SQL statement:
+SELECT * FROM USER_DATA 
+
+UPDATE USER_DATA SET current_location = 'USA' WHERE user_id = 'ABC003' [42000-214]
+2026-04-18 17:29:52 jdbc[3]: exception
+org.h2.jdbc.JdbcSQLNonTransientException: The object is already closed [90007-214]
