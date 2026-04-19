@@ -33,3 +33,19 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Java crash dumps and traces
+*.dmp
+*.hprof
+javacore*.txt
+jitdump*.dmp
+Snap*.trc
+hs_err_pid*.log
+
+# Database files
+backend/data/*.db
+backend/data/*.lock.db
+backend/data/*.trace.db
+*.mv.db
+*.lock.db
+*.trace.db
