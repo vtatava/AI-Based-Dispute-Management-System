@@ -3,11 +3,104 @@
 @tailwind utilities;
 
 @layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply m-0 p-0 antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    font-family: Arial, Verdana, -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
       'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
       sans-serif;
+  }
+
+  *:focus-visible {
+    outline: 3px solid #67e8f9;
+    outline-offset: 3px;
+  }
+}
+
+@layer components {
+  .skip-link {
+    position: absolute;
+    left: 1rem;
+    top: 1rem;
+    z-index: 1000;
+    transform: translateY(-200%);
+    padding: 0.75rem 1rem;
+    border-radius: 0.75rem;
+    background: #111827;
+    color: #ffffff;
+    font-weight: 700;
+    text-decoration: none;
+    transition: transform 0.2s ease;
+  }
+
+  .skip-link:focus {
+    transform: translateY(0);
+  }
+
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    white-space: nowrap;
+    clip: rect(0, 0, 0, 0);
+    border: 0;
+  }
+
+  .accessibility-high-contrast {
+    background: #000000 !important;
+    background-image: none !important;
+    color: #ffffff;
+  }
+
+  .accessibility-high-contrast h1,
+  .accessibility-high-contrast h2,
+  .accessibility-high-contrast h3,
+  .accessibility-high-contrast h4,
+  .accessibility-high-contrast h5,
+  .accessibility-high-contrast h6,
+  .accessibility-high-contrast p,
+  .accessibility-high-contrast span,
+  .accessibility-high-contrast label,
+  .accessibility-high-contrast li,
+  .accessibility-high-contrast div {
+    color: #ffffff !important;
+  }
+
+  .accessibility-high-contrast input,
+  .accessibility-high-contrast textarea,
+  .accessibility-high-contrast select,
+  .accessibility-high-contrast button {
+    background: #000000 !important;
+    color: #ffffff !important;
+    border-color: #facc15 !important;
+  }
+
+  .accessibility-high-contrast ::placeholder {
+    color: #e5e7eb !important;
+    opacity: 1;
+  }
+
+  .accessibility-large-text {
+    font-size: 1.125rem;
+    line-height: 1.8;
+  }
+
+  .accessibility-large-text input,
+  .accessibility-large-text textarea,
+  .accessibility-large-text select,
+  .accessibility-large-text button,
+  .accessibility-large-text label,
+  .accessibility-large-text p,
+  .accessibility-large-text span,
+  .accessibility-large-text li {
+    font-size: 1.05em !important;
+    line-height: 1.8;
   }
 }
 
@@ -30,6 +123,17 @@
     100% {
       background-position: 200% 0;
     }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 

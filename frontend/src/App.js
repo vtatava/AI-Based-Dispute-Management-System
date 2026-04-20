@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { motion } from 'framer-motion';
-import { 
-  FaDollarSign, 
-  FaMapMarkerAlt, 
-  FaCalendarAlt, 
-  FaUser, 
+import {
+  FaCalendarAlt,
+  FaCheckCircle,
+  FaDollarSign,
   FaGlobe,
-  FaSpinner
+  FaMapMarkerAlt,
+  FaMicrophone,
+  FaSpinner,
+  FaStop,
+  FaUser
 } from 'react-icons/fa';
 import FormCard from './components/FormCard';
 import InputField from './components/InputField';
@@ -16,6 +19,7 @@ import ResultCard from './components/ResultCard';
 import UploadBox from './components/UploadBox';
 
 function App() {
+  const recognitionRef = useRef(null);
   const [formData, setFormData] = useState({
     amount: '',
     transactionLocation: '',
@@ -34,10 +38,116 @@ function App() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [useAgenticMode, setUseAgenticMode] = useState(true);
+  const [highContrast, setHighContrast] = useState(false);
+  const [largeText, setLargeText] = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(false);
+  const [isListening, setIsListening] = useState(false);
+  const [liveMessage, setLiveMessage] = useState('Accessibility enhancements ready.');
+  const [assertiveMessage, setAssertiveMessage] = useState('');
+
+  const descriptionHintId = 'description-hint';
+  const descriptionFieldHelpId = 'description-help';
+  const transactionTypeHintId = 'transaction-type-hint';
+  const userIdValidationMessageId = 'user-id-validation-message';
+  const speechStatusId = 'speech-status';
+
+  const pageClassName = useMemo(() => {
+    const classes = ['min-h-screen', 'bg-gradient-to-br', 'from-slate-900', 'via-purple-900', 'to-slate-900', 'relative', 'overflow-hidden'];
+    if (highContrast) classes.push('accessibility-high-contrast');
+    if (largeText) classes.push('accessibility-large-text');
+    return classes.join(' ');
+  }, [highContrast, largeText]);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      setSpeechSupported(false);
+      return;
+    }
+
+    setSpeechSupported(true);
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setLiveMessage('Voice input started. Speak your dispute description.');
+    };
+
+    recognition.onresult = (event) => {
+      let finalTranscript = '';
+
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index][0].transcript;
+        if (event.results[index].isFinal) {
+          finalTranscript += `${transcript} `;
+        }
+      }
+
+      if (finalTranscript.trim()) {
+        setFormData((prev) => ({
+          ...prev,
+          description: prev.description
+            ? `${prev.description.trim()} ${finalTranscript.trim()}`.trim()
+            : finalTranscript.trim()
+        }));
+        setLiveMessage(`Voice text captured: ${finalTranscript.trim()}`);
+      }
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      setAssertiveMessage(`Speech recognition error: ${event.error}.`);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setLiveMessage('Voice input stopped.');
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.onstart = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading) {
+      setLiveMessage('AI analysis in progress. Please wait.');
+    }
+  }, [loading]);
+
+  useEffect(() => {
+    if (result && !loading) {
+      setLiveMessage(`Analysis complete. Decision: ${result.decision || 'available'}.`);
+    }
+  }, [result, loading]);
+
+  useEffect(() => {
+    if (error) {
+      setAssertiveMessage(error);
+    }
+  }, [error]);
+
+  useEffect(() => {
+    if (idValidationResult?.message) {
+      setLiveMessage(idValidationResult.message);
+    }
+  }, [idValidationResult]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData(prev => ({
+    setFormData((prev) => ({
       ...prev,
       [name]: value
     }));
@@ -47,27 +157,37 @@ function App() {
     const files = Array.from(e.target.files);
     if (type === 'transaction') {
       setTransactionDocuments(files);
+      setLiveMessage(
+        files.length > 0
+          ? `${files.length} transaction document${files.length > 1 ? 's' : ''} selected.`
+          : 'Transaction documents cleared.'
+      );
     } else if (type === 'userId') {
       setUserIdDocument(files[0]);
       if (files[0]) {
+        setLiveMessage(`User ID document selected: ${files[0].name}. Validating document.`);
         validateUserId(files[0]);
+      } else {
+        setLiveMessage('User ID document cleared.');
       }
     }
   };
 
   const validateUserId = async (file) => {
     if (!formData.userId || formData.userId.trim() === '') {
-      setIdValidationResult({
+      const validationFailure = {
         valid: false,
-        message: '⚠️ Please enter your UserID first before uploading ID document.'
-      });
+        message: 'Please enter your User ID first before uploading an ID document.'
+      };
+      setIdValidationResult(validationFailure);
+      setAssertiveMessage(validationFailure.message);
       return;
     }
-    
+
     const validationFormData = new FormData();
     validationFormData.append('idDocument', file);
     validationFormData.append('userId', formData.userId);
-    
+
     try {
       const response = await axios.post('http://localhost:9090/api/dispute/validate-id', validationFormData, {
         headers: {
@@ -76,10 +196,12 @@ function App() {
       });
       setIdValidationResult(response.data);
     } catch (err) {
-      setIdValidationResult({
+      const validationFailure = {
         valid: false,
         message: 'Failed to validate ID. Please try again or visit branch office.'
-      });
+      };
+      setIdValidationResult(validationFailure);
+      setAssertiveMessage(validationFailure.message);
     }
   };
 
@@ -88,10 +210,12 @@ function App() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setAssertiveMessage('');
+    setLiveMessage('Submitting your dispute for AI analysis.');
 
     try {
       const hasFiles = transactionDocuments.length > 0 || userIdDocument !== null;
-      
+
       if (hasFiles) {
         const submitData = new FormData();
         submitData.append('amount', parseFloat(formData.amount));
@@ -104,15 +228,15 @@ function App() {
         submitData.append('merchantName', formData.merchantName || '');
         submitData.append('transactionDateTime', formData.transactionDateTime || '');
         submitData.append('useAgenticMode', useAgenticMode);
-        
+
         transactionDocuments.forEach((file) => {
           submitData.append('transactionDocuments', file);
         });
-        
+
         if (userIdDocument) {
           submitData.append('userIdDocument', userIdDocument);
         }
-        
+
         const response = await axios.post('http://localhost:9090/api/dispute/raise-with-files', submitData, {
           headers: {
             'Content-Type': 'multipart/form-data'
@@ -142,6 +266,22 @@ function App() {
     }
   };
 
+  const startVoiceInput = () => {
+    if (!speechSupported || !recognitionRef.current) {
+      setAssertiveMessage('Speech recognition is not supported in this browser.');
+      return;
+    }
+
+    setAssertiveMessage('');
+    recognitionRef.current.start();
+  };
+
+  const stopVoiceInput = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+  };
+
   const handleReset = () => {
     setFormData({
       amount: '',
@@ -159,19 +299,36 @@ function App() {
     setIdValidationResult(null);
     setResult(null);
     setError(null);
+    setAssertiveMessage('');
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+    setLiveMessage('Form reset. All fields cleared.');
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 relative overflow-hidden">
-      {/* Animated background elements */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+    <div className={pageClassName}>
+      <a
+        href="#main-content"
+        className="skip-link"
+      >
+        Skip to main content
+      </a>
+
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {liveMessage}
+      </div>
+      <div className="sr-only" aria-live="assertive" aria-atomic="true">
+        {assertiveMessage}
+      </div>
+
+      <div className="absolute inset-0 overflow-hidden pointer-events-none" aria-hidden="true">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-cyan-500/20 rounded-full blur-3xl animate-float"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-violet-500/20 rounded-full blur-3xl animate-float" style={{ animationDelay: '1s' }}></div>
         <div className="absolute top-1/2 left-1/2 w-96 h-96 bg-purple-500/20 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
       </div>
 
       <div className="relative z-10 container mx-auto px-4 py-8 max-w-7xl">
-        {/* Header */}
         <motion.header
           initial={{ opacity: 0, y: -50 }}
           animate={{ opacity: 1, y: 0 }}
@@ -179,46 +336,83 @@ function App() {
           className="text-center mb-12"
         >
           <h1 className="text-5xl md:text-6xl font-bold text-white mb-4 bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-violet-400 to-purple-400">
-            🏦 AI Dispute Management
+            AI Dispute Management
           </h1>
-          <p className="text-xl text-gray-300">
-            Intelligent fraud detection powered by <span className="font-semibold text-cyan-400">IBM Agentic-AI</span>
+          <p className="text-xl text-gray-200">
+            Accessible fraud dispute filing powered by <span className="font-semibold text-cyan-300">IBM Agentic-AI</span>
+          </p>
+          <p className="text-base text-gray-300 mt-3">
+            Use keyboard navigation, high contrast mode, and large text mode for a more accessible experience.
           </p>
         </motion.header>
 
-        {/* Mode Toggle */}
-        <motion.div
+        <motion.section
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="max-w-2xl mx-auto mb-8"
+          className="max-w-4xl mx-auto mb-8"
+          aria-labelledby="accessibility-controls-title"
         >
           <div className="bg-white/10 backdrop-blur-xl rounded-xl p-4 border border-white/20">
-            <label className="flex items-center justify-center gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={useAgenticMode}
-                onChange={(e) => setUseAgenticMode(e.target.checked)}
-                className="w-5 h-5 rounded accent-cyan-500"
-              />
-              <span className="text-white font-semibold text-lg">
-                {useAgenticMode ? '🤖 Multi-Agent AI Mode' : '📊 Rule-Based Mode'}
-              </span>
-            </label>
-            <p className="text-gray-400 text-sm text-center mt-2">
+            <h2 id="accessibility-controls-title" className="text-xl font-semibold text-white text-center mb-4">
+              Accessibility and analysis controls
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <label className="flex items-center justify-center gap-3 cursor-pointer rounded-xl border border-white/15 bg-white/5 p-4">
+                <input
+                  type="checkbox"
+                  checked={useAgenticMode}
+                  onChange={(e) => setUseAgenticMode(e.target.checked)}
+                  className="w-5 h-5 rounded accent-cyan-500"
+                  aria-describedby="agentic-mode-help"
+                />
+                <span className="text-white font-semibold text-base">
+                  {useAgenticMode ? 'Multi-Agent AI Mode' : 'Rule-Based Mode'}
+                </span>
+              </label>
+
+              <label className="flex items-center justify-center gap-3 cursor-pointer rounded-xl border border-white/15 bg-white/5 p-4">
+                <input
+                  type="checkbox"
+                  checked={highContrast}
+                  onChange={(e) => {
+                    setHighContrast(e.target.checked);
+                    setLiveMessage(e.target.checked ? 'High contrast mode enabled.' : 'High contrast mode disabled.');
+                  }}
+                  className="w-5 h-5 rounded accent-cyan-500"
+                />
+                <span className="text-white font-semibold text-base">High contrast mode</span>
+              </label>
+
+              <label className="flex items-center justify-center gap-3 cursor-pointer rounded-xl border border-white/15 bg-white/5 p-4">
+                <input
+                  type="checkbox"
+                  checked={largeText}
+                  onChange={(e) => {
+                    setLargeText(e.target.checked);
+                    setLiveMessage(e.target.checked ? 'Large text mode enabled.' : 'Large text mode disabled.');
+                  }}
+                  className="w-5 h-5 rounded accent-cyan-500"
+                />
+                <span className="text-white font-semibold text-base">Large text mode</span>
+              </label>
+            </div>
+            <p id="agentic-mode-help" className="text-gray-300 text-sm text-center mt-3">
               {useAgenticMode
-                ? 'Advanced analysis using Intent, Context, and Decision agents'
-                : 'Traditional rule-based analysis'}
+                ? 'Advanced analysis using Intent, Context, and Decision agents.'
+                : 'Traditional rule-based analysis.'}
             </p>
           </div>
-        </motion.div>
+        </motion.section>
 
-        {/* Main Content - Centered Form */}
-        <div className="max-w-4xl mx-auto mb-8">
-          {/* Dispute Form */}
-          <FormCard title="🎯 Raise a Dispute" subtitle="Fill in the details below to start your AI-powered dispute analysis">
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* User ID */}
+        <main id="main-content" className="max-w-4xl mx-auto mb-8" tabIndex="-1">
+          <FormCard
+            title="Raise a dispute"
+            subtitle="Fill in the details below to start your AI-powered dispute analysis."
+          >
+            <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="dispute-form-title">
+              <h2 id="dispute-form-title" className="sr-only">Dispute filing form</h2>
+
               <InputField
                 label="User ID"
                 icon={FaUser}
@@ -226,21 +420,28 @@ function App() {
                 value={formData.userId}
                 onChange={handleChange}
                 placeholder="e.g., ABC003"
-                hint="Your unique user identifier"
+                hint="Enter your unique user identifier. Example: ABC003."
                 required
               />
 
-              {/* Transaction Type */}
               <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-200 mb-2">
-                  Transaction Type <span className="text-red-400">*</span>
+                <label htmlFor="transactionType" className="block text-sm font-semibold text-gray-200 mb-2">
+                  Transaction Type
+                  <span className="text-red-400 ml-1" aria-hidden="true">*</span>
+                  <span className="sr-only">required</span>
                 </label>
+                <p id={transactionTypeHintId} className="text-xs text-gray-300 mb-2">
+                  Select the type of transaction involved in the dispute.
+                </p>
                 <select
+                  id="transactionType"
                   name="transactionType"
                   value={formData.transactionType}
                   onChange={handleChange}
                   required
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:bg-white/10"
+                  aria-required="true"
+                  aria-describedby={transactionTypeHintId}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-300 transition-all duration-300 backdrop-blur-sm hover:bg-white/10"
                 >
                   <option value="ONLINE" className="bg-slate-800">Online</option>
                   <option value="ATM" className="bg-slate-800">ATM</option>
@@ -249,7 +450,6 @@ function App() {
                 </select>
               </div>
 
-              {/* Amount and Date */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <InputField
                   label="Amount"
@@ -259,23 +459,23 @@ function App() {
                   value={formData.amount}
                   onChange={handleChange}
                   placeholder="25000"
-                  hint="Transaction amount in ₹"
+                  hint="Transaction amount in Indian Rupees."
                   required
                   min="0"
                   step="0.01"
                 />
                 <InputField
-                  label="Date & Time"
+                  label="Date and Time"
                   icon={FaCalendarAlt}
                   type="datetime-local"
                   name="transactionDateTime"
                   value={formData.transactionDateTime}
                   onChange={handleChange}
+                  hint="Select the date and time of the transaction."
                   required
                 />
               </div>
 
-              {/* Conditional Fields */}
               {formData.transactionType === 'ONLINE' && (
                 <InputField
                   label="Website URL"
@@ -284,7 +484,7 @@ function App() {
                   value={formData.websiteUrl}
                   onChange={handleChange}
                   placeholder="www.example.com"
-                  hint="Optional"
+                  hint="Optional. Add the website used for the transaction."
                 />
               )}
 
@@ -295,11 +495,11 @@ function App() {
                   value={formData.merchantName}
                   onChange={handleChange}
                   placeholder="Enter merchant name"
+                  hint="Enter the merchant or business name."
                   required
                 />
               )}
 
-              {/* Locations */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <InputField
                   label="Transaction Location"
@@ -308,7 +508,7 @@ function App() {
                   value={formData.transactionLocation}
                   onChange={handleChange}
                   placeholder="USA, UK, INDIA"
-                  hint="Where transaction occurred"
+                  hint="Where the transaction occurred."
                   required
                 />
                 <InputField
@@ -318,31 +518,73 @@ function App() {
                   value={formData.userCurrentLocation}
                   onChange={handleChange}
                   placeholder="INDIA, USA, UK"
-                  hint="Where you are now"
+                  hint="Where you are currently located."
                   required
                 />
               </div>
 
-              {/* Description */}
               <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-200 mb-2">
-                  Description <span className="text-red-400">*</span>
+                <label htmlFor="description" className="block text-sm font-semibold text-gray-200 mb-2">
+                  Description
+                  <span className="text-red-400 ml-1" aria-hidden="true">*</span>
+                  <span className="sr-only">required</span>
                 </label>
+                <p id={descriptionHintId} className="text-xs text-gray-300 mb-2">
+                  Describe what happened, for example: “This transaction was not done by me.”
+                </p>
+                <p id={descriptionFieldHelpId} className="sr-only">
+                  Provide enough details for the AI system to review the dispute.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                  <button
+                    type="button"
+                    onClick={isListening ? stopVoiceInput : startVoiceInput}
+                    disabled={!speechSupported}
+                    aria-describedby={speechStatusId}
+                    aria-pressed={isListening}
+                    className={`inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-semibold border transition-all duration-300 ${
+                      isListening
+                        ? 'bg-red-500/20 text-red-100 border-red-400'
+                        : 'bg-cyan-500/20 text-cyan-100 border-cyan-400'
+                    } ${!speechSupported ? 'opacity-50 cursor-not-allowed' : 'hover:bg-white/10'}`}
+                  >
+                    {isListening ? (
+                      <>
+                        <FaStop aria-hidden="true" />
+                        Stop voice input
+                      </>
+                    ) : (
+                      <>
+                        <FaMicrophone aria-hidden="true" />
+                        Start voice input
+                      </>
+                    )}
+                  </button>
+                  <div id={speechStatusId} className="text-sm text-gray-200 flex items-center">
+                    {!speechSupported
+                      ? 'Speech recognition is not supported in this browser. Use Chrome or Edge.'
+                      : isListening
+                        ? 'Listening now. Speak clearly to add text to the description.'
+                        : 'Press the microphone button to dictate the dispute description.'}
+                  </div>
+                </div>
                 <textarea
+                  id="description"
                   name="description"
                   value={formData.description}
                   onChange={handleChange}
-                  placeholder="Describe the issue (e.g., 'not done by me', 'fraud transaction')"
+                  placeholder="Describe the issue, for example: not done by me or fraud transaction."
                   required
                   rows="4"
-                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all duration-300 backdrop-blur-sm hover:bg-white/10 resize-none"
+                  aria-required="true"
+                  aria-describedby={`${descriptionHintId} ${descriptionFieldHelpId} ${speechStatusId}`}
+                  className="w-full px-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-cyan-400 focus:border-cyan-300 transition-all duration-300 backdrop-blur-sm hover:bg-white/10 resize-none"
                 />
               </div>
 
-              {/* File Uploads */}
               <UploadBox
                 label="Transaction Documents"
-                hint="Upload receipts, screenshots, etc."
+                hint="Upload receipts, screenshots, or other supporting documents."
                 name="transactionDocuments"
                 onChange={(e) => handleFileChange(e, 'transaction')}
                 accept="image/*,.pdf"
@@ -352,50 +594,53 @@ function App() {
 
               <UploadBox
                 label="User ID Document"
-                hint="Upload government ID for verification"
+                hint="Upload a government ID for verification."
                 name="userIdDocument"
                 onChange={(e) => handleFileChange(e, 'userId')}
                 accept="image/*,.pdf"
                 required
                 files={userIdDocument}
+                ariaDescribedBy={idValidationResult ? userIdValidationMessageId : undefined}
               />
 
-              {/* ID Validation Result */}
               {idValidationResult && (
                 <motion.div
                   initial={{ opacity: 0, y: -10 }}
                   animate={{ opacity: 1, y: 0 }}
+                  id={userIdValidationMessageId}
+                  role="status"
+                  aria-live="polite"
                   className={`p-4 rounded-xl border ${
                     idValidationResult.valid
-                      ? 'bg-green-500/10 border-green-500/30 text-green-300'
-                      : 'bg-red-500/10 border-red-500/30 text-red-300'
+                      ? 'bg-green-500/10 border-green-500/30 text-green-200'
+                      : 'bg-red-500/10 border-red-500/30 text-red-200'
                   }`}
                 >
-                  <p className="font-semibold">
-                    {idValidationResult.valid ? '✓ ' : '⚠️ '}
-                    {idValidationResult.message}
+                  <p className="font-semibold flex items-start gap-2">
+                    <FaCheckCircle className={`mt-1 flex-shrink-0 ${idValidationResult.valid ? 'text-green-300' : 'text-red-300'}`} aria-hidden="true" />
+                    <span>{idValidationResult.message}</span>
                   </p>
                   {!idValidationResult.valid && (
-                    <p className="text-sm mt-2 text-red-400">
+                    <p className="text-sm mt-2 text-red-100">
                       Please upload a correct ID or visit the Dispute Admin desk at your nearest branch office.
                     </p>
                   )}
                 </motion.div>
               )}
 
-              {/* Buttons */}
-              <div className="flex gap-4 pt-4">
+              <div className="flex flex-col sm:flex-row gap-4 pt-4">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   type="submit"
                   disabled={loading}
+                  aria-busy={loading}
                   className="flex-1 bg-gradient-to-r from-cyan-500 to-violet-500 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-cyan-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                 >
                   {loading ? (
                     <>
-                      <FaSpinner className="animate-spin" />
-                      Analyzing...
+                      <FaSpinner className="animate-spin" aria-hidden="true" />
+                      Analyzing dispute
                     </>
                   ) : (
                     'Submit Dispute'
@@ -408,48 +653,47 @@ function App() {
                   onClick={handleReset}
                   className="px-6 py-4 bg-white/10 hover:bg-white/20 text-white font-semibold rounded-xl border border-white/20 transition-all duration-300"
                 >
-                  Reset
+                  Reset form
                 </motion.button>
               </div>
             </form>
           </FormCard>
-        </div>
+        </main>
 
-        {/* Loading State */}
         {loading && (
-          <motion.div
+          <motion.section
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="max-w-4xl mx-auto bg-white/10 backdrop-blur-xl rounded-2xl p-12 border border-white/20 flex flex-col items-center justify-center mb-8"
+            role="status"
+            aria-live="polite"
           >
-            <FaSpinner className="text-cyan-400 text-6xl animate-spin mb-6" />
-            <h3 className="text-2xl font-bold text-white mb-2">AI Analysis in Progress</h3>
-            <p className="text-gray-300 text-center">
-              Our IBM Agentic-AI system is analyzing your dispute...
+            <FaSpinner className="text-cyan-300 text-6xl animate-spin mb-6" aria-hidden="true" />
+            <h2 className="text-2xl font-bold text-white mb-2">AI Analysis in Progress</h2>
+            <p className="text-gray-200 text-center">
+              Our IBM Agentic-AI system is analyzing your dispute.
             </p>
-          </motion.div>
+          </motion.section>
         )}
 
-        {/* Error Display */}
         {error && (
-          <motion.div
+          <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="bg-red-500/10 backdrop-blur-xl rounded-2xl p-6 border border-red-500/30 mb-8"
+            className="max-w-4xl mx-auto bg-red-500/10 backdrop-blur-xl rounded-2xl p-6 border border-red-500/30 mb-8"
+            role="alert"
           >
-            <h3 className="text-red-300 font-bold text-xl mb-2 flex items-center gap-2">
-              ❌ Error
-            </h3>
-            <p className="text-red-200">{error}</p>
-          </motion.div>
+            <h2 className="text-red-200 font-bold text-xl mb-2">
+              Error
+            </h2>
+            <p className="text-red-100">{error}</p>
+          </motion.section>
         )}
 
-        {/* AI Flow Stepper */}
         {result && useAgenticMode && result.agentFlow && (
           <AIFlowStepper agentFlow={result.agentFlow} loading={loading} />
         )}
 
-        {/* Result Card */}
         {result && !loading && (
           <ResultCard result={result} />
         )}
