@@ -23,16 +23,16 @@ public class IbmIcaService {
     private final WebClient webClient;
     private final ObjectMapper objectMapper;
 
-    @Value("${ibm.ica.base-url:https://servicesessentials.ibm.com/api/v1}")
+    @Value("${ibm.ica.base-url:https://servicesessentials.ibm.com/apis/v3}")
     private String baseUrl;
 
-    @Value("${ibm.ica.api-key:7:xxx:96ca8495-9263-4979-8c45-959b782f687e:714754b8-10a9-4805-9f91-35d052277612:56018549-6321-4e2e-b574-28c3287571ff}")
+    @Value("${ibm.ica.api-key:7:xxx:96ca8495-9263-4979-8c45-959b782f687e:2d31c441-704c-4385-a651-63d924ba0015:56018549-6321-4e2e-b574-28c3287571ff}")
     private String apiKey;
 
-    @Value("${ibm.ica.model:anthropic.claude-sonnet-4-5-20250514}")
+    @Value("${ibm.ica.model:global/anthropic.claude-sonnet-4-5-20250929-v1:0}")
     private String model;
 
-    @Value("${ibm.ica.timeout:30}")
+    @Value("${ibm.ica.timeout:90}")
     private int timeoutSeconds;
 
     public IbmIcaService(WebClient.Builder webClientBuilder, ObjectMapper objectMapper) {

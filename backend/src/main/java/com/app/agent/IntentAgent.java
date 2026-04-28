@@ -89,13 +89,36 @@ public class IntentAgent {
         IntentAnalysisResult result = new IntentAnalysisResult();
         String desc = description.toLowerCase();
         
-        // Rule-based classification
+        // CRITICAL: Detect contradictory/fraudulent intent
+        // User admits they did the transaction but still wants refund
+        if ((desc.contains("done by me") || desc.contains("i did it") || desc.contains("i did") ||
+             desc.contains("i made") || desc.contains("my transaction") || desc.contains("i bought") ||
+             desc.contains("i purchased") || desc.contains("i authorized")) &&
+            (desc.contains("refund") || desc.contains("money back") || desc.contains("return") ||
+             desc.contains("want back") || desc.contains("need back") || desc.contains("need refund") ||
+             desc.contains("but still") || desc.contains("but need"))) {
+            result.setIntent("FRAUDULENT_CLAIM");
+            result.setConfidence("HIGH");
+            result.setReason("CONTRADICTORY: User admits making/authorizing transaction but requests refund - clear fraud attempt");
+            return result;
+        }
+        
+        // Detect silly/test requests
+        if (desc.contains("test") || desc.contains("testing") || desc.contains("for fun") ||
+            desc.contains("just checking") || desc.contains("experiment") || desc.contains("joke")) {
+            result.setIntent("FRIVOLOUS");
+            result.setConfidence("HIGH");
+            result.setReason("Frivolous/test request detected - not a genuine dispute");
+            return result;
+        }
+        
+        // Rule-based classification for genuine disputes
         if (desc.contains("fraud") || desc.contains("stolen") || desc.contains("unauthorized") ||
-            desc.contains("hacked") || desc.contains("not done by me")) {
+            desc.contains("hacked") || desc.contains("not done by me") || desc.contains("didn't make")) {
             result.setIntent("FRAUD");
             result.setConfidence("HIGH");
             result.setReason("Fraud keywords detected in description");
-        } else if (desc.contains("not delivered") || desc.contains("wrong item") || 
+        } else if (desc.contains("not delivered") || desc.contains("wrong item") ||
                    desc.contains("defective") || desc.contains("merchant") || desc.contains("seller")) {
             result.setIntent("MERCHANT_DISPUTE");
             result.setConfidence("MEDIUM");

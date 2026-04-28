@@ -462,7 +462,14 @@ public class DisputeController {
             response.setRiskScore(decisionResult.getRiskScore());
             response.setDecision(decisionResult.getDecision());
             response.setRefundAmount(decisionResult.getRefundAmount());
-            response.setReviewReason(decisionResult.getExplanation());
+            
+            // Combine explanation with AI insights
+            String fullExplanation = decisionResult.getExplanation();
+            if (decisionResult.getAiInsights() != null && !decisionResult.getAiInsights().isEmpty()) {
+                fullExplanation += decisionResult.getAiInsights();
+            }
+            response.setReviewReason(fullExplanation);
+            
             response.setAgentFlow(agentFlow);
             response.setUserVerified(contextData.isUserVerified());
             
