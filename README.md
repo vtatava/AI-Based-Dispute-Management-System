@@ -80,7 +80,7 @@ mvn clean install
 mvn spring-boot:run
 ```
 
-Backend will start on: **http://localhost:8080**
+Backend will start on: **http://localhost:9090**
 
 #### 3. Start Frontend (Terminal 2)
 ```bash
@@ -95,7 +95,7 @@ Frontend will start on: **http://localhost:3000**
 
 ### Endpoint: Raise Dispute
 
-**URL**: `POST http://localhost:8080/api/dispute/raise`
+**URL**: `POST http://localhost:9090/api/dispute/raise`
 
 **Request Body**:
 ```json
@@ -211,14 +211,14 @@ npm run build
 ### Backend Configuration
 File: `backend/src/main/resources/application.properties`
 ```properties
-server.port=8080
+server.port=9090
 spring.application.name=dispute-ai
 ```
 
 ### Frontend Configuration
 API endpoint is configured in `App.js`:
 ```javascript
-const response = await axios.post('http://localhost:8080/api/dispute/raise', {...});
+const response = await axios.post('http://localhost:9090/api/dispute/raise', {...});
 ```
 
 ## 📊 System Flow

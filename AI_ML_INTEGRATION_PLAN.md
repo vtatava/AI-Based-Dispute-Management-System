@@ -358,7 +358,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8080:8080"
+      - "9090:9090"
     depends_on:
       - ml-service
       - intent-service

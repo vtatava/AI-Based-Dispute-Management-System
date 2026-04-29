@@ -3,7 +3,7 @@
 ## ✅ PROJECT STATUS: FULLY FUNCTIONAL
 
 ### Backend Status: ✅ RUNNING
-- **Port**: 8080
+- **Port**: 9090
 - **Status**: Started successfully in 4.383 seconds
 - **Framework**: Spring Boot 3.1.5
 - **Java Version**: OpenJDK 17.0.16
@@ -153,7 +153,7 @@ Output: {"intent": "NORMAL", "riskScore": 50, "decision": "HUMAN_REVIEW"}
 - **Framework**: Spring Boot 3.1.5
 - **Build Tool**: Maven 3.9.5 (via wrapper)
 - **Server**: Embedded Tomcat
-- **Port**: 8080
+- **Port**: 9090
 - **API Endpoint**: POST /api/dispute/raise
 
 ### Frontend

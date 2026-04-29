@@ -88,12 +88,12 @@ Once Maven is installed and backend is running:
 1. Backend should show:
 ```
 Started DisputeAiApplication in X.XXX seconds
-Tomcat started on port(s): 8080
+Tomcat started on port(s): 9090
 ```
 
 2. Test API with PowerShell:
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":25000,"location":"USA","description":"not done by me"}'
+Invoke-RestMethod -Uri "http://localhost:9090/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":25000,"location":"USA","description":"not done by me"}'
 ```
 
 Expected response:
@@ -135,8 +135,8 @@ Expected response:
 
 ### Port already in use
 ```powershell
-# Check what's using port 8080
-netstat -ano | findstr :8080
+# Check what's using port 9090
+netstat -ano | findstr :9090
 
 # Kill the process
 taskkill /PID <PID> /F

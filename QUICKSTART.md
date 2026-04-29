@@ -23,10 +23,10 @@ mvn spring-boot:run
 **Expected Output:**
 ```
 Started DisputeAiApplication in X.XXX seconds
-Tomcat started on port(s): 8080
+Tomcat started on port(s): 9090
 ```
 
-✅ Backend is ready at: http://localhost:8080
+✅ Backend is ready at: http://localhost:9090
 
 ---
 
@@ -98,14 +98,14 @@ Local: http://localhost:3000
 
 ### Backend Issues
 
-**Problem:** Port 8080 already in use
+**Problem:** Port 9090 already in use
 ```bash
 # Windows
-netstat -ano | findstr :8080
+netstat -ano | findstr :9090
 taskkill /PID <PID> /F
 
 # Linux/Mac
-lsof -ti:8080 | xargs kill -9
+lsof -ti:9090 | xargs kill -9
 ```
 
 **Problem:** Maven build fails
@@ -132,7 +132,7 @@ npm install
 ```
 
 **Problem:** CORS error
-- Ensure backend is running on port 8080
+- Ensure backend is running on port 9090
 - Check browser console for exact error
 - Verify CORS is enabled in DisputeController.java
 
@@ -142,14 +142,14 @@ npm install
 
 ### Using cURL:
 ```bash
-curl -X POST http://localhost:8080/api/dispute/raise \
+curl -X POST http://localhost:9090/api/dispute/raise \
   -H "Content-Type: application/json" \
   -d "{\"amount\":25000,\"location\":\"USA\",\"description\":\"not done by me\"}"
 ```
 
 ### Using Postman:
 1. Method: `POST`
-2. URL: `http://localhost:8080/api/dispute/raise`
+2. URL: `http://localhost:9090/api/dispute/raise`
 3. Headers: `Content-Type: application/json`
 4. Body (raw JSON):
 ```json
@@ -167,7 +167,7 @@ curl -X POST http://localhost:8080/api/dispute/raise \
 ### Backend Running Successfully:
 - ✅ No errors in console
 - ✅ "Started DisputeAiApplication" message appears
-- ✅ Port 8080 is listening
+- ✅ Port 9090 is listening
 
 ### Frontend Running Successfully:
 - ✅ Browser opens automatically

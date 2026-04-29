@@ -103,11 +103,11 @@ echo ========================================
 echo  Application Started Successfully!
 echo ========================================
 echo.
-echo Backend:  http://localhost:8080
+echo Backend:  http://localhost:9090
 echo Frontend: http://localhost:3000
 echo.
 echo Two command windows have been opened:
-echo   1. Backend Server (Spring Boot) - Port 8080
+echo   1. Backend Server (Spring Boot) - Port 9090
 echo   2. Frontend Server (React) - Port 3000
 echo.
 echo IMPORTANT:

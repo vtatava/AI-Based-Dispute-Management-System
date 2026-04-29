@@ -3,9 +3,9 @@
 ## ✅ WHAT'S COMPLETE AND WORKING
 
 ### Backend: 100% COMPLETE & RUNNING ✅
-- ✅ **Status**: Successfully running on port 8080
+- ✅ **Status**: Successfully running on port 9090
 - ✅ **Startup Time**: 4.383 seconds
-- ✅ **API Endpoint**: POST http://localhost:8080/api/dispute/raise
+- ✅ **API Endpoint**: POST http://localhost:9090/api/dispute/raise
 - ✅ **Test Result**: PASSED with correct output
 - ✅ **AI Logic**: Verified and working perfectly
 
@@ -165,7 +165,7 @@ npm start
 **Step 4: Access Application**
 ```
 Frontend: http://localhost:3000
-Backend:  http://localhost:8080
+Backend:  http://localhost:9090
 ```
 
 ---
@@ -176,13 +176,13 @@ You can test the backend API right now using PowerShell:
 
 ```powershell
 # Test Case 1: High Risk Fraud
-Invoke-RestMethod -Uri "http://localhost:8080/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":25000,"location":"USA","description":"not done by me"}'
+Invoke-RestMethod -Uri "http://localhost:9090/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":25000,"location":"USA","description":"not done by me"}'
 
 # Test Case 2: Low Risk
-Invoke-RestMethod -Uri "http://localhost:8080/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":5000,"location":"INDIA","description":"Product issue"}'
+Invoke-RestMethod -Uri "http://localhost:9090/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":5000,"location":"INDIA","description":"Product issue"}'
 
 # Test Case 3: Medium Risk
-Invoke-RestMethod -Uri "http://localhost:8080/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":15000,"location":"USA","description":"Item not received"}'
+Invoke-RestMethod -Uri "http://localhost:9090/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":15000,"location":"USA","description":"Item not received"}'
 ```
 
 ---

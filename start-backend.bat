@@ -39,7 +39,9 @@ echo [OK] Current directory: %CD%
 echo.
 
 REM Check if Maven wrapper exists
-if not exist "mvnw.cmd" (
+if exist "mvnw.cmd" (
+    echo [OK] Maven wrapper found
+) else (
     echo [ERROR] Maven wrapper (mvnw.cmd) not found
     echo Expected location: %CD%\mvnw.cmd
     echo.
@@ -76,7 +78,7 @@ echo ========================================
 echo  Starting Spring Boot Application
 echo ========================================
 echo.
-echo Backend will be available at: http://localhost:8080
+echo Backend will be available at: http://localhost:9090
 echo.
 echo Press Ctrl+C to stop the server
 echo.

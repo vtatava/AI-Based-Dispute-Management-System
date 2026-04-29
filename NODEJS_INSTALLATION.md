@@ -107,7 +107,7 @@ The frontend will:
 
 ✅ **Installed:**
 - Java 17 (OpenJDK 17.0.16)
-- Backend is RUNNING on port 8080
+- Backend is RUNNING on port 9090
 
 ❌ **Need to Install:**
 - Node.js 18+ or 20+ (LTS recommended)
@@ -152,19 +152,19 @@ You can test the backend API without the frontend using:
 
 ### PowerShell
 ```powershell
-Invoke-RestMethod -Uri "http://localhost:8080/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":25000,"location":"USA","description":"not done by me"}'
+Invoke-RestMethod -Uri "http://localhost:9090/api/dispute/raise" -Method POST -ContentType "application/json" -Body '{"amount":25000,"location":"USA","description":"not done by me"}'
 ```
 
 ### cURL (if installed)
 ```bash
-curl -X POST http://localhost:8080/api/dispute/raise \
+curl -X POST http://localhost:9090/api/dispute/raise \
   -H "Content-Type: application/json" \
   -d '{"amount":25000,"location":"USA","description":"not done by me"}'
 ```
 
 ### Postman
 1. Method: POST
-2. URL: http://localhost:8080/api/dispute/raise
+2. URL: http://localhost:9090/api/dispute/raise
 3. Headers: Content-Type: application/json
 4. Body (raw JSON):
 ```json
@@ -198,7 +198,7 @@ curl -X POST http://localhost:8080/api/dispute/raise \
 
 4. **Access Application**
    - Frontend: http://localhost:3000
-   - Backend: http://localhost:8080
+   - Backend: http://localhost:9090
 
 ---
 
@@ -208,7 +208,7 @@ curl -X POST http://localhost:8080/api/dispute/raise \
 |-----------|--------|---------|
 | Java | ✅ Installed | 17.0.16 |
 | Maven | ✅ Wrapper Included | 3.9.5 |
-| Backend | ✅ Running | Port 8080 |
+| Backend | ✅ Running | Port 9090 |
 | Node.js | ❌ Not Installed | Need 18+ or 20+ |
 | npm | ❌ Not Installed | Comes with Node.js |
 | Frontend | ⏳ Waiting | Need Node.js |

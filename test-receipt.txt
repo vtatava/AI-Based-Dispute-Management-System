@@ -1,0 +1,14 @@
+TRANSACTION RECEIPT
+==================
+
+UserId: ABC003
+Name: Amit Patel
+Transaction Date: 28-Apr-2026
+Location: USA
+Amount: 5000.00
+
+Transaction Type: Online Purchase
+Merchant: Example Store
+Status: Completed
+
+Thank you for your business!
