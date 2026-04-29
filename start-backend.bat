@@ -39,7 +39,9 @@ echo [OK] Current directory: %CD%
 echo.
 
 REM Check if Maven wrapper exists
-if not exist "mvnw.cmd" (
+if exist "mvnw.cmd" (
+    echo [OK] Maven wrapper found
+) else (
     echo [ERROR] Maven wrapper (mvnw.cmd) not found
     echo Expected location: %CD%\mvnw.cmd
     echo.

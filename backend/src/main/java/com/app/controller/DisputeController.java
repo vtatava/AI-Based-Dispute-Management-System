@@ -18,6 +18,9 @@ import com.app.service.OllamaService.OllamaAnalysisResult;
 import com.app.service.IbmIcaService;
 import com.app.service.IbmIcaService.IcaAnalysisResult;
 import com.app.service.IdValidationService;
+import com.app.service.TransactionReceiptService;
+import com.app.service.TransactionReceiptService.ReceiptData;
+import com.app.service.TransactionReceiptService.ValidationResult;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
@@ -26,6 +29,7 @@ import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashMap;
 import java.util.Map;
 
 @RestController
@@ -56,6 +60,9 @@ public class DisputeController {
     
     @Autowired
     private IdValidationService idValidationService;
+    
+    @Autowired
+    private TransactionReceiptService transactionReceiptService;
 
     @Value("${ollama.enabled:true}")
     private boolean ollamaEnabled;
@@ -462,7 +469,14 @@ public class DisputeController {
             response.setRiskScore(decisionResult.getRiskScore());
             response.setDecision(decisionResult.getDecision());
             response.setRefundAmount(decisionResult.getRefundAmount());
-            response.setReviewReason(decisionResult.getExplanation());
+            
+            // Combine explanation with AI insights
+            String fullExplanation = decisionResult.getExplanation();
+            if (decisionResult.getAiInsights() != null && !decisionResult.getAiInsights().isEmpty()) {
+                fullExplanation += decisionResult.getAiInsights();
+            }
+            response.setReviewReason(fullExplanation);
+            
             response.setAgentFlow(agentFlow);
             response.setUserVerified(contextData.isUserVerified());
             
@@ -673,6 +687,61 @@ public class DisputeController {
     }
     
     /**
+     * Validate transaction receipt in real-time (before submission)
+     */
+    @PostMapping(value = "/validate-receipt", consumes = "multipart/form-data")
+    public ResponseEntity<Map<String, Object>> validateReceipt(
+            @RequestParam("transactionReceipt") MultipartFile transactionReceipt,
+            @RequestParam("userId") String userId,
+            @RequestParam("amount") double amount,
+            @RequestParam("transactionDateTime") String transactionDateTime,
+            @RequestParam(value = "transactionLocation", required = false) String transactionLocation,
+            @RequestParam("transactionType") String transactionType,
+            @RequestParam(value = "websiteUrl", required = false) String websiteUrl,
+            @RequestParam(value = "merchantName", required = false) String merchantName) {
+        
+        Map<String, Object> response = new HashMap<>();
+        
+        System.out.println("=== Real-Time Receipt Validation Started ===");
+        
+        // Extract data from receipt
+        ReceiptData receiptData = transactionReceiptService.extractReceiptData(transactionReceipt);
+        
+        if (!receiptData.isSuccess()) {
+            response.put("valid", false);
+            response.put("message", "❌ Could not read receipt data: " + receiptData.getMessage());
+            return ResponseEntity.ok(response);
+        }
+        
+        // Convert transactionDateTime to date string for validation
+        String transactionDateForValidation = transactionDateTime;
+        if (transactionDateTime != null && transactionDateTime.contains("T")) {
+            transactionDateForValidation = transactionDateTime.split("T")[0];
+        }
+        
+        // Validate form data against receipt data
+        ValidationResult validation = transactionReceiptService.validateAgainstReceipt(
+            userId, transactionDateForValidation, amount, transactionLocation,
+            transactionType, websiteUrl, merchantName, receiptData
+        );
+        
+        if (validation.isValid()) {
+            response.put("valid", true);
+            response.put("message", "✅ Receipt Validated Successfully! All information matches.");
+            response.put("details", "Your receipt data matches the form inputs. You can proceed with submission.");
+        } else {
+            response.put("valid", false);
+            response.put("message", "❌ Receipt Validation Failed");
+            response.put("mismatches", validation.getMismatches());
+            response.put("details", validation.getMessage());
+        }
+        
+        System.out.println("=== Receipt Validation Result: " + (validation.isValid() ? "PASS" : "FAIL") + " ===");
+        
+        return ResponseEntity.ok(response);
+    }
+    
+    /**
      * Enhanced dispute submission with file uploads and merchant name handling
      */
     @PostMapping(value = "/raise-with-files", consumes = "multipart/form-data")
@@ -687,6 +756,7 @@ public class DisputeController {
             @RequestParam(value = "merchantName", required = false) String merchantName,
             @RequestParam(value = "transactionDateTime", required = false) String transactionDateTime,
             @RequestParam(value = "transactionDocuments", required = false) MultipartFile[] transactionDocuments,
+            @RequestParam(value = "transactionReceipt", required = false) MultipartFile transactionReceipt,
             @RequestParam(value = "userIdDocument", required = false) MultipartFile userIdDocument,
             @RequestParam(value = "useAgenticMode", required = false, defaultValue = "true") boolean useAgenticMode) {
         
@@ -752,6 +822,72 @@ public class DisputeController {
                                        "Please provide your UserID (e.g., ABC001) and upload a valid government ID document.");
                 return response;
             }
+        }
+        
+        // CRITICAL: Validate transaction receipt if provided
+        if (transactionReceipt != null && !transactionReceipt.isEmpty()) {
+            System.out.println("=== Transaction Receipt Validation Started ===");
+            
+            // Extract data from receipt
+            ReceiptData receiptData = transactionReceiptService.extractReceiptData(transactionReceipt);
+            
+            if (!receiptData.isSuccess()) {
+                // Receipt extraction failed
+                DisputeResponse response = new DisputeResponse();
+                response.setIntent("RECEIPT_EXTRACTION_FAILED");
+                response.setRiskScore(100);
+                response.setDecision("REJECTED");
+                response.setRefundAmount(null);
+                response.setReviewReason("🚫 DISPUTE REJECTED: Could not extract transaction data from receipt. " +
+                                       receiptData.getMessage() + "\n\n" +
+                                       "Please upload a clear, readable transaction receipt in text format.");
+                return response;
+            }
+            
+            // Convert transactionDateTime to date string for validation
+            String transactionDateForValidation = transactionDateTime;
+            if (transactionDateTime != null && transactionDateTime.contains("T")) {
+                // Extract just the date part from ISO format (2026-04-28T00:00:00 -> 2026-04-28)
+                transactionDateForValidation = transactionDateTime.split("T")[0];
+            }
+            
+            // Validate form data against receipt data
+            ValidationResult validation = transactionReceiptService.validateAgainstReceipt(
+                userId, transactionDateForValidation, amount, transactionLocation,
+                transactionType, websiteUrl, merchantName, receiptData
+            );
+            
+            if (!validation.isValid()) {
+                // Data mismatch - REJECT with detailed error
+                DisputeResponse response = new DisputeResponse();
+                response.setIntent("RECEIPT_VALIDATION_FAILED");
+                response.setRiskScore(100);
+                response.setDecision("REJECTED");
+                response.setRefundAmount(null);
+                
+                StringBuilder errorMsg = new StringBuilder();
+                errorMsg.append("🚫 DISPUTE REJECTED: The information you provided does not match the transaction receipt.\n\n");
+                errorMsg.append("**Mismatches Detected:**\n");
+                for (String mismatch : validation.getMismatches()) {
+                    errorMsg.append("• ").append(mismatch).append("\n");
+                }
+                errorMsg.append("\n**What This Means:**\n");
+                errorMsg.append("The details in your dispute form (UserID, Transaction Date, Amount) do not match ");
+                errorMsg.append("the information in the uploaded transaction receipt. This suggests either:\n");
+                errorMsg.append("1. Incorrect information was provided in the form\n");
+                errorMsg.append("2. Wrong receipt was uploaded\n");
+                errorMsg.append("3. Potential fraudulent claim\n\n");
+                errorMsg.append("**Action Required:**\n");
+                errorMsg.append("Please verify your information and upload the correct transaction receipt. ");
+                errorMsg.append("If you believe this is an error, contact our support team at disputehelp247@xyz.com");
+                
+                response.setReviewReason(errorMsg.toString());
+                return response;
+            }
+            
+            // Validation successful - continue with full AI analysis instead of short-circuit auto refund
+            System.out.println("✓ Receipt validation PASSED - continuing with DB current-location checks and agentic AI analysis");
+            request.setDescription(description + " [Transaction Proof Validated]");
         }
         
         // Handle merchant-specific logic

@@ -15,6 +15,7 @@ public class DisputeRequest {
     private String websiteUrl; // For online transactions
     private String merchantName; // For merchant transactions
     private String documentData; // Base64 encoded document or extracted text
+    private String transactionReceiptData; // Transaction receipt for validation
 
     public DisputeRequest() {
     }
@@ -120,6 +121,14 @@ public class DisputeRequest {
 
     public void setDocumentData(String documentData) {
         this.documentData = documentData;
+    }
+
+    public String getTransactionReceiptData() {
+        return transactionReceiptData;
+    }
+
+    public void setTransactionReceiptData(String transactionReceiptData) {
+        this.transactionReceiptData = transactionReceiptData;
     }
 }
 
