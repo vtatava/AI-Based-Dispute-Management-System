@@ -1,0 +1,7 @@
+UserId: ABC003
+Name: Amit
+Transaction Date: 28-Apr-2026
+Location: USA
+Transaction Type: ATM
+Amount: 5000.00
+ATM ID: ATM12345

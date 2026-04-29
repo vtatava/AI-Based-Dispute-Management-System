@@ -1,0 +1,7 @@
+UserId: ABC003
+Name: Amit
+Website URL: free-iphone-giveaway.net
+Transaction Date: 28-Apr-2026
+Location: USA
+Transaction Type: Online
+Amount: 5000.00

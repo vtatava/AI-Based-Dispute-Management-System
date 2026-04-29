@@ -1,0 +1,7 @@
+UserId: ABC003
+Name: Amit
+Merchant Name: XYZ
+Transaction Date: 28-Apr-2026
+Location: INDIA
+Transaction Type: Merchant
+Amount: 5000.00

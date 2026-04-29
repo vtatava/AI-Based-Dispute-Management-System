@@ -83,10 +83,16 @@ public class IbmIcaService {
     ) {
         StringBuilder prompt = new StringBuilder();
         prompt.append("You are an expert fraud detection AI analyst for a financial institution. ");
-        prompt.append("Analyze the following transaction dispute and provide a detailed assessment.\n\n");
+        prompt.append("A customer has filed a dispute claim. Your job is to assess if this is a LEGITIMATE FRAUD CLAIM or a FRAUDULENT/FALSE CLAIM.\n\n");
+
+        prompt.append("IMPORTANT CONTEXT:\n");
+        prompt.append("- The customer is reporting that THEY are a victim of fraud (unauthorized transaction)\n");
+        prompt.append("- You must determine if their CLAIM is genuine or if they are lying/committing fraud themselves\n");
+        prompt.append("- A legitimate fraud claim means: customer is honest, transaction was truly unauthorized\n");
+        prompt.append("- A fraudulent claim means: customer is lying, trying to get free refund for their own purchase\n\n");
 
         prompt.append("DISPUTE DETAILS:\n");
-        prompt.append("- Description: ").append(description).append("\n");
+        prompt.append("- Customer's Description: ").append(description).append("\n");
         prompt.append("- Transaction Amount: $").append(amount).append("\n");
         prompt.append("- Transaction Location: ").append(transactionLocation).append("\n");
         prompt.append("- User Current Location: ").append(userCurrentLocation).append("\n");
@@ -94,19 +100,31 @@ public class IbmIcaService {
         prompt.append("- Current System Decision: ").append(decision).append("\n\n");
 
         prompt.append("ANALYSIS REQUIRED:\n");
-        prompt.append("1. FRAUD ASSESSMENT: Is this likely fraud? (YES/NO/UNCERTAIN)\n");
+        prompt.append("1. CLAIM LEGITIMACY: Is this a LEGITIMATE fraud claim by an honest victim? (YES/NO/UNCERTAIN)\n");
+        prompt.append("   - YES = Customer is telling the truth, they are a genuine fraud victim, approve refund\n");
+        prompt.append("   - NO = Customer is lying, this is a false claim, they made the purchase themselves\n");
+        prompt.append("   - UNCERTAIN = Cannot determine, needs human review\n\n");
         prompt.append("2. CONFIDENCE LEVEL: How confident are you? (HIGH/MEDIUM/LOW)\n");
         prompt.append("3. FINAL DECISION: Should we AUTO_REFUND or require HUMAN_REVIEW?\n");
-        prompt.append("4. KEY REASONS: List 3-5 specific reasons for your decision\n");
-        prompt.append("5. RED FLAGS: Identify any suspicious patterns or concerns\n");
+        prompt.append("   - AUTO_REFUND: If claim is legitimate (YES) with high confidence\n");
+        prompt.append("   - HUMAN_REVIEW: If uncertain or low confidence\n\n");
+        prompt.append("4. KEY REASONS: List 3-5 specific reasons supporting your assessment\n");
+        prompt.append("5. RED FLAGS: Identify any suspicious patterns that suggest customer is lying\n");
         prompt.append("6. RECOMMENDATIONS: Suggest next steps or actions\n\n");
 
         prompt.append("DECISION CRITERIA:\n");
-        prompt.append("- AUTO_REFUND: Clear fraud indicators, high confidence, customer protection priority\n");
-        prompt.append("- HUMAN_REVIEW: Ambiguous cases, conflicting signals, requires investigation\n\n");
+        prompt.append("- AUTO_REFUND: Customer's claim appears legitimate, consistent story, genuine victim indicators\n");
+        prompt.append("- HUMAN_REVIEW: Inconsistencies in story, contradictions, or uncertain legitimacy\n\n");
+
+        prompt.append("RED FLAGS FOR FALSE CLAIMS:\n");
+        prompt.append("- Customer contradicts themselves in description\n");
+        prompt.append("- Customer provides too many unnecessary details (over-explaining)\n");
+        prompt.append("- Location claims don't match evidence\n");
+        prompt.append("- Vague or generic fraud description\n");
+        prompt.append("- Customer admits to having card/credentials but claims fraud\n\n");
 
         prompt.append("Provide your analysis in a structured format with clear sections for each point above. ");
-        prompt.append("Be specific, factual, and focus on fraud detection patterns.");
+        prompt.append("Focus on determining if the CUSTOMER'S CLAIM is legitimate, not just if fraud occurred.");
 
         return prompt.toString();
     }
@@ -166,15 +184,25 @@ public class IbmIcaService {
         result.setRawResponse(response);
         result.setModel(model);
 
-        // Extract fraud assessment
-        if (response.toUpperCase().contains("FRAUD ASSESSMENT:")) {
-            if (response.toUpperCase().contains("YES")) {
-                result.setFraudAssessment("YES");
-            } else if (response.toUpperCase().contains("NO")) {
-                result.setFraudAssessment("NO");
+        // Extract claim legitimacy assessment (looking for CLAIM LEGITIMACY section)
+        if (response.toUpperCase().contains("CLAIM LEGITIMACY:") || response.toUpperCase().contains("LEGITIMATE")) {
+            // Look for YES/NO/UNCERTAIN after "CLAIM LEGITIMACY:"
+            String upperResponse = response.toUpperCase();
+            int legitimacyIndex = upperResponse.indexOf("CLAIM LEGITIMACY:");
+            if (legitimacyIndex != -1) {
+                String afterLegitimacy = upperResponse.substring(legitimacyIndex);
+                if (afterLegitimacy.contains("YES")) {
+                    result.setFraudAssessment("LEGITIMATE_CLAIM"); // Customer is honest victim
+                } else if (afterLegitimacy.contains("NO")) {
+                    result.setFraudAssessment("FALSE_CLAIM"); // Customer is lying
+                } else {
+                    result.setFraudAssessment("UNCERTAIN");
+                }
             } else {
                 result.setFraudAssessment("UNCERTAIN");
             }
+        } else {
+            result.setFraudAssessment("UNCERTAIN");
         }
 
         // Extract confidence level
@@ -186,10 +214,20 @@ public class IbmIcaService {
             result.setConfidenceLevel("LOW");
         }
 
-        // Extract final decision
-        if (response.toUpperCase().contains("AUTO_REFUND") || response.toUpperCase().contains("AUTO REFUND")) {
-            result.setRecommendedDecision("AUTO_REFUND");
+        // Extract final decision - CRITICAL: Must align with claim assessment
+        // If claim is FALSE, recommendation should be REJECT, not AUTO_REFUND
+        if ("FALSE_CLAIM".equals(result.getFraudAssessment())) {
+            // Customer is lying - always reject
+            result.setRecommendedDecision("REJECT");
+        } else if ("LEGITIMATE_CLAIM".equals(result.getFraudAssessment())) {
+            // Customer is genuine victim - check if AI recommends auto refund
+            if (response.toUpperCase().contains("AUTO_REFUND") || response.toUpperCase().contains("AUTO REFUND")) {
+                result.setRecommendedDecision("AUTO_REFUND");
+            } else {
+                result.setRecommendedDecision("HUMAN_REVIEW");
+            }
         } else {
+            // Uncertain - always require human review
             result.setRecommendedDecision("HUMAN_REVIEW");
         }
 
@@ -235,12 +273,12 @@ public class IbmIcaService {
         StringBuilder summary = new StringBuilder();
         summary.append("🤖 IBM ICA Analysis (").append(result.getModel()).append("): ");
 
-        if ("YES".equals(result.getFraudAssessment())) {
-            summary.append("Fraud detected with ").append(result.getConfidenceLevel()).append(" confidence. ");
-        } else if ("NO".equals(result.getFraudAssessment())) {
-            summary.append("No clear fraud indicators. ");
+        if ("LEGITIMATE_CLAIM".equals(result.getFraudAssessment())) {
+            summary.append("Legitimate fraud claim - customer is genuine victim with ").append(result.getConfidenceLevel()).append(" confidence. ");
+        } else if ("FALSE_CLAIM".equals(result.getFraudAssessment())) {
+            summary.append("False/fraudulent claim detected - customer appears to be lying. ");
         } else {
-            summary.append("Uncertain fraud assessment. ");
+            summary.append("Uncertain claim legitimacy - requires review. ");
         }
 
         summary.append("Risk Score: ").append(riskScore).append("/100. ");

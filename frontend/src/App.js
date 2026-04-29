@@ -31,7 +31,8 @@ function App() {
     merchantName: '',
     transactionDateTime: ''
   });
-  const [transactionDocuments, setTransactionDocuments] = useState([]);
+  const [transactionReceipt, setTransactionReceipt] = useState(null);
+  const [receiptValidationResult, setReceiptValidationResult] = useState(null);
   const [userIdDocument, setUserIdDocument] = useState(null);
   const [idValidationResult, setIdValidationResult] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -155,13 +156,15 @@ function App() {
 
   const handleFileChange = (e, type) => {
     const files = Array.from(e.target.files);
-    if (type === 'transaction') {
-      setTransactionDocuments(files);
-      setLiveMessage(
-        files.length > 0
-          ? `${files.length} transaction document${files.length > 1 ? 's' : ''} selected.`
-          : 'Transaction documents cleared.'
-      );
+    if (type === 'receipt') {
+      setTransactionReceipt(files[0]);
+      if (files[0]) {
+        setLiveMessage(`Transaction proof selected: ${files[0].name}. Validating receipt...`);
+        validateReceipt(files[0]);
+      } else {
+        setLiveMessage('Transaction proof cleared.');
+        setReceiptValidationResult(null);
+      }
     } else if (type === 'userId') {
       setUserIdDocument(files[0]);
       if (files[0]) {
@@ -169,7 +172,61 @@ function App() {
         validateUserId(files[0]);
       } else {
         setLiveMessage('User ID document cleared.');
+        setIdValidationResult(null);
       }
+    }
+  };
+
+  const validateReceipt = async (file) => {
+    // Check if required fields are filled
+    if (!formData.userId || !formData.amount || !formData.transactionDateTime) {
+      const validationFailure = {
+        valid: false,
+        pending: true,
+        message: '⚠️ Please fill in User ID, Amount, and Transaction Date/Time before uploading receipt.'
+      };
+      setReceiptValidationResult(validationFailure);
+      setAssertiveMessage(validationFailure.message);
+      return;
+    }
+
+    // Set validating state
+    setReceiptValidationResult({
+      validating: true,
+      message: '🔄 Validating receipt against your form data...'
+    });
+
+    const validationFormData = new FormData();
+    validationFormData.append('transactionReceipt', file);
+    validationFormData.append('userId', formData.userId);
+    validationFormData.append('amount', formData.amount);
+    validationFormData.append('transactionDateTime', formData.transactionDateTime);
+    validationFormData.append('transactionLocation', formData.transactionLocation || '');
+    validationFormData.append('transactionType', formData.transactionType);
+    validationFormData.append('websiteUrl', formData.websiteUrl || '');
+    validationFormData.append('merchantName', formData.merchantName || '');
+
+    try {
+      const response = await axios.post('http://localhost:9090/api/dispute/validate-receipt', validationFormData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      
+      setReceiptValidationResult(response.data);
+      
+      if (response.data.valid) {
+        setLiveMessage('✅ Receipt validation successful! All data matches.');
+      } else {
+        setAssertiveMessage('❌ Receipt validation failed: ' + response.data.message);
+      }
+    } catch (err) {
+      const validationFailure = {
+        valid: false,
+        message: '❌ Failed to validate receipt. Please try again or contact support.'
+      };
+      setReceiptValidationResult(validationFailure);
+      setAssertiveMessage(validationFailure.message);
     }
   };
 
@@ -214,7 +271,7 @@ function App() {
     setLiveMessage('Submitting your dispute for AI analysis.');
 
     try {
-      const hasFiles = transactionDocuments.length > 0 || userIdDocument !== null;
+      const hasFiles = userIdDocument !== null || transactionReceipt !== null;
 
       if (hasFiles) {
         const submitData = new FormData();
@@ -229,9 +286,9 @@ function App() {
         submitData.append('transactionDateTime', formData.transactionDateTime || '');
         submitData.append('useAgenticMode', useAgenticMode);
 
-        transactionDocuments.forEach((file) => {
-          submitData.append('transactionDocuments', file);
-        });
+        if (transactionReceipt) {
+          submitData.append('transactionReceipt', transactionReceipt);
+        }
 
         if (userIdDocument) {
           submitData.append('userIdDocument', userIdDocument);
@@ -294,7 +351,8 @@ function App() {
       merchantName: '',
       transactionDateTime: ''
     });
-    setTransactionDocuments([]);
+    setTransactionReceipt(null);
+    setReceiptValidationResult(null);
     setUserIdDocument(null);
     setIdValidationResult(null);
     setResult(null);
@@ -304,6 +362,41 @@ function App() {
       recognitionRef.current.stop();
     }
     setLiveMessage('Form reset. All fields cleared.');
+  };
+
+  // Check if submit button should be disabled
+  const isSubmitDisabled = () => {
+    // If loading, disable
+    if (loading) return true;
+    
+    // If user uploaded ID document but validation hasn't completed or failed
+    if (userIdDocument && (!idValidationResult || !idValidationResult.valid)) {
+      return true;
+    }
+    
+    // Transaction proof is mandatory
+    if (!transactionReceipt) {
+      return true;
+    }
+
+    // If validation is pending (waiting for required fields)
+    if (receiptValidationResult?.pending) {
+      return true;
+    }
+    // If validation is in progress
+    if (receiptValidationResult?.validating) {
+      return true;
+    }
+    // If validation failed
+    if (receiptValidationResult && !receiptValidationResult.valid) {
+      return true;
+    }
+    // If no validation result yet
+    if (!receiptValidationResult) {
+      return true;
+    }
+    
+    return false;
   };
 
   return (
@@ -583,16 +676,6 @@ function App() {
               </div>
 
               <UploadBox
-                label="Transaction Documents"
-                hint="Upload receipts, screenshots, or other supporting documents."
-                name="transactionDocuments"
-                onChange={(e) => handleFileChange(e, 'transaction')}
-                accept="image/*,.pdf"
-                multiple
-                files={transactionDocuments}
-              />
-
-              <UploadBox
                 label="User ID Document"
                 hint="Upload a government ID for verification."
                 name="userIdDocument"
@@ -628,24 +711,92 @@ function App() {
                 </motion.div>
               )}
 
-              <div className="flex flex-col sm:flex-row gap-4 pt-4">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  type="submit"
-                  disabled={loading}
-                  aria-busy={loading}
-                  className="flex-1 bg-gradient-to-r from-cyan-500 to-violet-500 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-cyan-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              <UploadBox
+                label="Transaction Proofs"
+                hint="Upload transaction proof for automatic validation and faster processing."
+                name="transactionReceipt"
+                onChange={(e) => handleFileChange(e, 'receipt')}
+                accept=".txt,.pdf,image/*"
+                required
+                files={transactionReceipt}
+                ariaDescribedBy={receiptValidationResult ? 'receipt-validation-message' : undefined}
+              />
+
+              {receiptValidationResult && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  id="receipt-validation-message"
+                  role="status"
+                  aria-live="polite"
+                  className={`p-4 rounded-xl border ${
+                    receiptValidationResult.valid
+                      ? 'bg-green-500/10 border-green-500/30 text-green-200'
+                      : receiptValidationResult.validating
+                      ? 'bg-blue-500/10 border-blue-500/30 text-blue-200'
+                      : 'bg-red-500/10 border-red-500/30 text-red-200'
+                  }`}
                 >
-                  {loading ? (
-                    <>
-                      <FaSpinner className="animate-spin" aria-hidden="true" />
-                      Analyzing dispute
-                    </>
-                  ) : (
-                    'Submit Dispute'
+                  <p className="font-semibold flex items-start gap-2">
+                    {receiptValidationResult.validating ? (
+                      <FaSpinner className="mt-1 flex-shrink-0 text-blue-300 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FaCheckCircle className={`mt-1 flex-shrink-0 ${
+                        receiptValidationResult.valid ? 'text-green-300' : 'text-red-300'
+                      }`} aria-hidden="true" />
+                    )}
+                    <span>{receiptValidationResult.message}</span>
+                  </p>
+                  {receiptValidationResult.details && (
+                    <p className="text-sm mt-2">
+                      {receiptValidationResult.details}
+                    </p>
                   )}
-                </motion.button>
+                  {receiptValidationResult.mismatches && receiptValidationResult.mismatches.length > 0 && (
+                    <div className="mt-3 text-sm">
+                      <p className="font-semibold mb-1">Mismatches Found:</p>
+                      <ul className="list-disc list-inside space-y-1">
+                        {receiptValidationResult.mismatches.map((mismatch, index) => (
+                          <li key={index}>{mismatch}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-4 pt-4">
+                <div className="flex-1">
+                  <motion.button
+                    whileHover={{ scale: isSubmitDisabled() ? 1 : 1.02 }}
+                    whileTap={{ scale: isSubmitDisabled() ? 1 : 0.98 }}
+                    type="submit"
+                    disabled={isSubmitDisabled()}
+                    aria-busy={loading}
+                    aria-describedby="submit-button-help"
+                    className="w-full bg-gradient-to-r from-cyan-500 to-violet-500 text-white font-bold py-4 px-6 rounded-xl shadow-lg hover:shadow-cyan-500/50 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {loading ? (
+                      <>
+                        <FaSpinner className="animate-spin" aria-hidden="true" />
+                        Analyzing dispute
+                      </>
+                    ) : (
+                      'Submit Dispute'
+                    )}
+                  </motion.button>
+                  {isSubmitDisabled() && !loading && (
+                    <p id="submit-button-help" className="text-sm text-yellow-300 mt-2 text-center">
+                      {userIdDocument && (!idValidationResult || !idValidationResult.valid)
+                        ? '⚠️ Please wait for ID validation to complete or upload a valid ID document'
+                        : !transactionReceipt
+                        ? '⚠️ Please upload Transaction Proofs to continue'
+                        : receiptValidationResult?.pending && (!formData.userId || !formData.transactionDateTime || !formData.amount)
+                        ? '⚠️ Please fill in User ID, Date/Time, and Amount to validate the transaction proof'
+                        : '⚠️ Please complete all validations before submitting'}
+                    </p>
+                  )}
+                </div>
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}

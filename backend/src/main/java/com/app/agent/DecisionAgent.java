@@ -20,7 +20,7 @@ public class DecisionAgent {
                                       String description, double amount) {
         DecisionResult decision = new DecisionResult();
         
-        // CRITICAL: Check for fraudulent/frivolous intent FIRST
+        // CRITICAL SECURITY CHECK #1: Check for fraudulent/frivolous intent FIRST
         if ("FRAUDULENT_CLAIM".equals(intent.getIntent()) || "FRIVOLOUS".equals(intent.getIntent())) {
             decision.setRiskScore(100);
             decision.setIntent(intent.getIntent());
@@ -30,6 +30,27 @@ public class DecisionAgent {
             decision.setExplanation(buildFraudulentClaimRejection(intent, context));
             return decision; // Early return - no need for further analysis
         }
+        
+        // CRITICAL SECURITY CHECK #2: Check for location fraud BEFORE any other analysis
+        // If user is lying about their location, REJECT immediately - no exceptions
+        if (context.isLocationFraudDetected()) {
+            int totalRiskScore = context.getContextRiskScore();
+            decision.setRiskScore(Math.min(totalRiskScore, 100));
+            decision.setIntent(intent.getIntent());
+            decision.setDecision("REJECTED");
+            decision.setAction("CLAIM_DENIED");
+            decision.setRefundAmount(0.0);
+            decision.setExplanation(buildLocationFraudRejectionExplanation(intent, context, decision.getRiskScore()));
+            return decision; // Early return - location fraud is non-negotiable
+        }
+        
+        boolean transactionProofValidated = description != null && description.contains("[Transaction Proof Validated]");
+        boolean userLocationMatchesDatabase = context.isUserVerified() && !context.isLocationFraudDetected();
+        boolean transactionLocationMatchesUserLocation = !context.isLocationMismatch();
+        boolean noContradictorySignals =
+            !"FRAUDULENT_CLAIM".equals(intent.getIntent()) &&
+            !"FRIVOLOUS".equals(intent.getIntent()) &&
+            !context.isLocationFraudDetected();
         
         // Calculate total risk score
         int totalRiskScore = context.getContextRiskScore();
@@ -60,13 +81,13 @@ public class DecisionAgent {
         }
         
         // CRITICAL: Check IBM ICA AI recommendation FIRST
-        // If AI says NO or UNCERTAIN with high risk, reject the claim
+        // If AI determines this is a FALSE_CLAIM (customer is lying), reject it
         if (icaResult != null) {
-            String fraudAssessment = icaResult.getFraudAssessment();
+            String claimAssessment = icaResult.getFraudAssessment();
             String recommendation = icaResult.getRecommendedDecision();
             
-            // If AI explicitly says NO to fraud assessment, reject
-            if ("NO".equals(fraudAssessment)) {
+            // If AI explicitly says this is a FALSE_CLAIM (customer is lying/committing fraud), reject
+            if ("FALSE_CLAIM".equals(claimAssessment)) {
                 decision.setDecision("REJECTED");
                 decision.setAction("CLAIM_DENIED");
                 decision.setRefundAmount(0.0);
@@ -74,14 +95,73 @@ public class DecisionAgent {
                 return decision;
             }
             
-            // If AI is uncertain but risk is very high (100) and doesn't recommend AUTO_REFUND, reject
-            if (("UNCERTAIN".equals(fraudAssessment) || fraudAssessment == null) &&
-                totalRiskScore >= 90 && !"AUTO_REFUND".equals(recommendation)) {
+            // If AI says LEGITIMATE_CLAIM (customer is genuine victim), approve if recommended
+            if ("LEGITIMATE_CLAIM".equals(claimAssessment) && "AUTO_REFUND".equals(recommendation)) {
+                decision.setDecision("AUTO_REFUND");
+                decision.setAction("BLOCK_CARD");
+                decision.setRefundAmount(amount);
+                decision.setExplanation(buildAIApprovedRefundExplanation(intent, context, totalRiskScore, icaResult));
+                return decision;
+            }
+            
+            // If uncertain and risk is very high with location fraud, reject
+            if ("UNCERTAIN".equals(claimAssessment) && context.isLocationFraudDetected() && totalRiskScore >= 90) {
                 decision.setDecision("REJECTED");
                 decision.setAction("CLAIM_DENIED");
                 decision.setRefundAmount(0.0);
-                decision.setExplanation(buildAIRejectionExplanation(intent, context, totalRiskScore, icaResult));
+                decision.setExplanation(buildLocationFraudRejectionExplanation(intent, context, totalRiskScore));
                 return decision;
+            }
+        }
+        
+        // Favor trustworthy disputes when proof validation and location consistency are present
+        if (transactionProofValidated && noContradictorySignals) {
+            if (userLocationMatchesDatabase && transactionLocationMatchesUserLocation) {
+                decision.setRiskScore(Math.min(totalRiskScore, 35));
+                decision.setDecision("AUTO_REFUND");
+                decision.setAction("BLOCK_CARD");
+                decision.setRefundAmount(amount);
+                decision.setExplanation(buildTrustedValidatedDisputeExplanation(intent, context, decision.getRiskScore(), true));
+                try {
+                    String aiEnhancement = getAIEnhancement(description, decision, decision.getRiskScore());
+                    decision.addAiInsight(aiEnhancement);
+                } catch (Exception e) {
+                    // AI enhancement failed, continue with rule-based decision
+                }
+                return decision;
+            }
+            
+            if (userLocationMatchesDatabase || transactionLocationMatchesUserLocation) {
+                // Check if IBM ICA AI explicitly recommends AUTO_REFUND
+                if (icaResult != null && "AUTO_REFUND".equals(icaResult.getRecommendedDecision())) {
+                    // AI is confident - approve auto refund
+                    decision.setRiskScore(Math.min(totalRiskScore, 40));
+                    decision.setDecision("AUTO_REFUND");
+                    decision.setAction("BLOCK_CARD");
+                    decision.setRefundAmount(amount);
+                    decision.setExplanation(buildAIApprovedRefundExplanation(intent, context, decision.getRiskScore(), icaResult));
+                    try {
+                        String aiEnhancement = getAIEnhancement(description, decision, decision.getRiskScore());
+                        decision.addAiInsight(aiEnhancement);
+                    } catch (Exception e) {
+                        // AI enhancement failed, continue with rule-based decision
+                    }
+                    return decision;
+                } else {
+                    // AI not confident or unavailable - human review
+                    decision.setRiskScore(Math.min(Math.max(totalRiskScore, 20), 55));
+                    decision.setDecision("HUMAN_REVIEW");
+                    decision.setAction("VERIFY");
+                    decision.setRefundAmount(null);
+                    decision.setExplanation(buildTrustedValidatedDisputeExplanation(intent, context, decision.getRiskScore(), false));
+                    try {
+                        String aiEnhancement = getAIEnhancement(description, decision, decision.getRiskScore());
+                        decision.addAiInsight(aiEnhancement);
+                    } catch (Exception e) {
+                        // AI enhancement failed, continue with rule-based decision
+                    }
+                    return decision;
+                }
             }
         }
         
@@ -204,6 +284,31 @@ public class DecisionAgent {
         return explanation.toString();
     }
     
+    private String buildTrustedValidatedDisputeExplanation(IntentAnalysisResult intent, ContextData context, int riskScore, boolean autoApproved) {
+        StringBuilder explanation = new StringBuilder();
+        explanation.append("✅ TRUSTED VALIDATED DISPUTE (Risk Score: ").append(riskScore).append("/100)\n\n");
+        explanation.append(autoApproved ? "**Decision: AUTO_REFUND**\n\n" : "**Decision: HUMAN_REVIEW**\n\n");
+        explanation.append("**Reasons:**\n");
+        explanation.append("• Transaction proof values were validated successfully\n");
+        explanation.append("• No contradictory statements were detected in the dispute description\n");
+        explanation.append("• User location signals are consistent with the provided claim\n");
+        explanation.append("• Intent classified as: ").append(intent.getIntent()).append(" - ").append(intent.getReason()).append("\n\n");
+        explanation.append("**Context:**\n").append(context.getContextNotes());
+        
+        explanation.append("\n\n**Outcome:**\n");
+        if (autoApproved) {
+            explanation.append("✓ Transaction proof and user/location checks are consistent\n");
+            explanation.append("✓ Refund approved automatically\n");
+            explanation.append("✓ Card protection actions can proceed\n");
+        } else {
+            explanation.append("• Core signals look consistent, but final manual verification is recommended\n");
+            explanation.append("• Case has been moved to human review instead of rejection\n");
+            explanation.append("• Reviewer should confirm remaining low-risk details\n");
+        }
+        
+        return explanation.toString();
+    }
+    
     private String buildMerchantDisputeExplanation(IntentAnalysisResult intent, ContextData context) {
         StringBuilder explanation = new StringBuilder();
         explanation.append("🏪 MERCHANT DISPUTE DETECTED\n\n");
@@ -274,20 +379,54 @@ public class DecisionAgent {
         return explanation.toString();
     }
     
-    private String buildAIRejectionExplanation(IntentAnalysisResult intent, ContextData context, int riskScore, IbmIcaService.IcaAnalysisResult icaResult) {
+    private String buildAIApprovedRefundExplanation(IntentAnalysisResult intent, ContextData context, int riskScore, IbmIcaService.IcaAnalysisResult icaResult) {
         StringBuilder explanation = new StringBuilder();
-        explanation.append("🚫 CLAIM REJECTED - AI FRAUD DETECTION\n\n");
-        explanation.append("**Decision: REJECTED - CLAIM DENIED**\n\n");
-        explanation.append("**IBM ICA AI Analysis Result:**\n");
-        explanation.append("• 🤖 AI Assessment: ").append(icaResult.getFraudAssessment()).append("\n");
+        explanation.append("✅ AUTO_REFUND APPROVED - AI-VALIDATED LEGITIMATE CLAIM (Risk Score: ").append(riskScore).append("/100)\n\n");
+        explanation.append("**Decision: AUTO_REFUND & BLOCK_CARD**\n\n");
+        explanation.append("**IBM ICA AI Analysis:**\n");
+        explanation.append("• 🤖 Claim Assessment: ").append(icaResult.getFraudAssessment() != null ? icaResult.getFraudAssessment() : "UNCERTAIN").append("\n");
         explanation.append("• 📊 Confidence Level: ").append(icaResult.getConfidenceLevel()).append("\n");
         explanation.append("• ⚖️ AI Recommendation: ").append(icaResult.getRecommendedDecision()).append("\n");
+        explanation.append("• ✅ AI has validated this as a LEGITIMATE fraud claim - customer is a genuine victim\n\n");
+        
+        explanation.append("**Validation Results:**\n");
+        explanation.append("• ✓ Customer's story is consistent and credible\n");
+        explanation.append("• ✓ No contradictory statements detected\n");
+        explanation.append("• ✓ Location signals support the claim\n");
+        explanation.append("• ✓ Intent classified as: ").append(intent.getIntent()).append("\n\n");
+        
+        explanation.append("**Context Analysis:**\n");
+        explanation.append(context.getContextNotes()).append("\n\n");
+        
+        if (icaResult.getKeyReasons() != null && !icaResult.getKeyReasons().equals("Not available")) {
+            explanation.append("**AI Key Reasons:**\n");
+            explanation.append(icaResult.getKeyReasons()).append("\n\n");
+        }
+        
+        explanation.append("**Actions Taken:**\n");
+        explanation.append("✓ Full refund approved automatically\n");
+        explanation.append("✓ Card blocked for security\n");
+        explanation.append("✓ New card will be issued\n");
+        explanation.append("✓ AI confirmed customer is honest victim of fraud\n");
+        
+        return explanation.toString();
+    }
+    
+    private String buildAIRejectionExplanation(IntentAnalysisResult intent, ContextData context, int riskScore, IbmIcaService.IcaAnalysisResult icaResult) {
+        StringBuilder explanation = new StringBuilder();
+        explanation.append("🚫 CLAIM REJECTED - FALSE/FRAUDULENT CLAIM DETECTED\n\n");
+        explanation.append("**Decision: REJECTED - CLAIM DENIED**\n\n");
+        explanation.append("**IBM ICA AI Analysis Result:**\n");
+        explanation.append("• 🤖 Claim Assessment: ").append(icaResult.getFraudAssessment()).append(" (Customer is lying)\n");
+        explanation.append("• 📊 Confidence Level: ").append(icaResult.getConfidenceLevel()).append("\n");
+        explanation.append("• ⚖️ AI Recommendation: REJECT - Claim Denied\n");
         explanation.append("• 🚨 Risk Score: ").append(riskScore).append("/100\n\n");
         
         explanation.append("**Critical Issues Detected:**\n");
-        explanation.append("• ⚠️ AI has identified this claim as potentially fraudulent or contradictory\n");
-        explanation.append("• 🚫 The description contains elements that suggest this is not a legitimate fraud claim\n");
-        explanation.append("• 🔍 Pattern analysis indicates inconsistencies in the claim\n\n");
+        explanation.append("• ⚠️ AI has identified this as a FALSE CLAIM - customer appears to be lying\n");
+        explanation.append("• 🚫 The description contains contradictions or fraudulent elements\n");
+        explanation.append("• 🔍 Pattern analysis indicates customer is attempting to commit fraud\n");
+        explanation.append("• ⚠️ This appears to be an attempt to get a free refund for an authorized purchase\n\n");
         
         explanation.append("**AI Key Reasons:**\n");
         explanation.append(icaResult.getKeyReasons()).append("\n\n");
@@ -297,14 +436,16 @@ public class DecisionAgent {
         
         explanation.append("**Actions Taken:**\n");
         explanation.append("❌ Claim REJECTED - No refund will be issued\n");
-        explanation.append("⚠️ Account flagged for review\n");
-        explanation.append("📋 Case documented for fraud pattern analysis\n\n");
+        explanation.append("⚠️ Account flagged for fraudulent activity\n");
+        explanation.append("📋 Case documented for fraud pattern analysis\n");
+        explanation.append("🚨 Repeated false claims may result in account suspension\n\n");
         
         explanation.append("**Important Notice:**\n");
-        explanation.append("Our AI-powered fraud detection system has identified issues with this claim. ");
-        explanation.append("If you believe this is an error, please contact customer support with additional ");
-        explanation.append("documentation and a clear, honest explanation of the situation. ");
-        explanation.append("Genuine disputes with accurate information will be processed appropriately.");
+        explanation.append("Our AI-powered fraud detection system has identified this claim as false or fraudulent. ");
+        explanation.append("Attempting to file false claims is a serious violation of our terms of service. ");
+        explanation.append("If you believe this is an error, please contact customer support with valid ");
+        explanation.append("documentation proving your claim is legitimate. ");
+        explanation.append("Genuine disputes with honest, accurate information will be processed appropriately.");
         
         return explanation.toString();
     }
